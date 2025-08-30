@@ -1,0 +1,19 @@
+fuzzer:
+  time_limit: 120 # seconds
+  execution_limit: 0 # 0 means no limit
+  per_run_timeout: 2 # seconds; classify as TIMEOUT/HANG if a run exceeds this (do not change this)
+  steps_per_seed: 5
+  mutations_per_step: 5
+  state_address_offset: 0x320b
+  state_reg: ['rdi', 'rsi', 'r15', 'r13', 'rbx', 'rbp', 'rcx', 'rdx']
+
+target:
+  binary: 'samples/CROMU_00005'
+  rootfs: 'rootfs/x8664_linux_glibc2.39'
+
+input:
+  method: 'stdin'
+  seed_inputs: ['1,1 1,2\n', '666\n', '9\n', '1,1 1,3\n', '111111111111']
+
+output:
+  dir: 'out'

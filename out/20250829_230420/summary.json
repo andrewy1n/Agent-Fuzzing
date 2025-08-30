@@ -1,0 +1,17 @@
+{
+  "total_executions": 81,
+  "corpus_count": 50,
+  "crashes_found": 0,
+  "total_execution_time_seconds": 78.2619936466217,
+  "average_execution_time_seconds": 0.9661974524274285,
+  "crash_rate": 0.0,
+  "corpus_stat_result": {
+    "total_edges": 2374,
+    "total_branch_sites": 1861,
+    "total_unique_instructions": 10102,
+    "avg_pathlen_blocks": 28312.08,
+    "max_pathlen_blocks": 29522,
+    "avg_calldepth": 417.88,
+    "max_calldepth": 645
+  }
+}

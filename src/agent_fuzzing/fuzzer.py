@@ -46,6 +46,7 @@ class AgentFuzzer:
         fcfg = self.run_config.get('fuzzer', {})
         self.steps_per_seed = int(fcfg.get('steps_per_seed', 1))
         self.mutations_per_step = int(fcfg.get('mutations_per_step', 10))
+        self.mutation_agent_config = self.run_config.get('mutation_agent', {})
     
     def run(self):
         corpus_results: List[ExecutionResult] = []
@@ -94,7 +95,7 @@ class AgentFuzzer:
             session = self.sessions.get(seed_str)
             
             if session is None:
-                session = MutationAgentSession()
+                session = MutationAgentSession(config=self.mutation_agent_config)
                 self.sessions[seed_str] = session
 
             for _step_index in range(self.steps_per_seed):

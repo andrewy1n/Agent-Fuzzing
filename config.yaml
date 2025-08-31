@@ -1,7 +1,7 @@
 fuzzer:
-  time_limit: 120 # seconds
-  execution_limit: 0 # 0 means no limit
-  per_run_timeout: 2 # seconds; classify as TIMEOUT/HANG if a run exceeds this (do not change this)
+  time_limit: 120
+  execution_limit: 0
+  per_run_timeout: 2
   steps_per_seed: 5
   mutations_per_step: 5
   state_address_offset: 0x320b
@@ -17,3 +17,7 @@ input:
 
 output:
   dir: 'out'
+
+mutation_agent:
+  model: 'gpt-4.1-mini'
+  prompt: ''

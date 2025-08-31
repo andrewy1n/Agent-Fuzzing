@@ -13,36 +13,22 @@ class Mutations(BaseModel):
     mutations: list[str]
 
 class MutationAgentSession:
-    def __init__(self):
+    def __init__(self, config: dict):
+        self.prompt = config['prompt']
+        self.model = config['model']
         self.messages = [
             {
                 "role": "system",
-                "content": """
-                You are a mutation agent for DARPA CGC challenge CROMU_00005.
+                "content": 
+                """
+                You are a mutation agent for a agent-driven fuzzer.
                 Your job: given a seed input and feedback (good/bad examples), produce a diverse list of input mutations that are more like the good examples and less like the bad ones, with the goal of increasing execution state coverage.
 
                 Output format:
                 - Return ONLY a JSON object that matches this schema: {"mutations": [string, ...]}.
                 - Each element in "mutations" is a single test input as a UTF-8 string (it will be converted to bytes by the harness).
                 - Do not include explanations, comments, or code fences.
-
-                CROMU_00005 input grammar and constraints:
-                - The program reads newline-delimited chess-like moves from STDIN.
-                - Each move line has the exact form: "x1,y1 x2,y2" (one space between the two coordinate pairs).
-                - x and y are integers in the inclusive range 0..7.
-                - Lines are applied sequentially starting from the initial board position.
-                - Only legal moves for the current side are accepted. The implementation models standard piece movement; special moves (castling, en passant, promotion) are not used.
-                - Parsing stops on an empty line or a line that is exactly "666". Including a terminating "666" line is optional but valid.
-                - Inputs may contain 1 to ~7 moves; a mix of 1-3 move sequences is effective. Some shorter sequences should end with a trailing newline and "666" to signal termination.
-
-                Mutation guidance:
-                - Keep coordinates within 0..7 and ensure move legality with respect to the evolving position.
-                - Avoid duplicate mutations and avoid non-grammar text.
-                - Do not include the seed input in the output.
-                - You will also receive stdout and whether a crash occurred for some examples; prioritize patterns that increased coverage or produced interesting stdout without crashing, and avoid patterns associated with crashes unless they appear to explore new states.
-                - Consider that moves are applied per team, after white moves, it will be black's turn and only pieces that are black can move. You should use this information to generate valid move patterns considering each team's pieces.
-                - If you see a valid move, you should build on it to generate a mutation that appends another valid move for the opposing team.
-                """
+                """ + self.prompt
             }
         ]
 
@@ -72,7 +58,7 @@ class MutationAgentSession:
         convo = self.messages + [{"role": "user", "content": user_prompt}]
 
         response = client.responses.parse(
-            model="gpt-4.1",
+            model=self.model,
             input=convo,
             text_format=Mutations
         )

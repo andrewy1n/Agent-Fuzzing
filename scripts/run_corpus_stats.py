@@ -4,8 +4,8 @@ import time
 import yaml
 import os
 from pathlib import Path
-from src.corpus_stat_tracker import CorpusStatTracker
-from src.ql_emulation import execute_with_qiling
+from agent_fuzzing.corpus_stat_tracker import CorpusStatTracker
+from agent_fuzzing.ql_emulation import execute_with_qiling
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input_dir', type=str, required=True, help='Directory containing corpus inputs')

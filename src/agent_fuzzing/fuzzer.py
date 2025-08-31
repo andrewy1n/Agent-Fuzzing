@@ -7,10 +7,10 @@ import random
 from datetime import datetime
 import codecs
 
-from models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult
-from mutation_agent import MutationAgentSession
-from ql_emulation import execute_with_qiling
-from corpus_stat_tracker import CorpusStatTracker
+from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult
+from .mutation_agent import MutationAgentSession
+from .ql_emulation import execute_with_qiling
+from .corpus_stat_tracker import CorpusStatTracker
 
 class SeedQueue:
     def __init__(self):

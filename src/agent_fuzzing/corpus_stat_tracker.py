@@ -1,4 +1,4 @@
-from models import ExecutionResult, CorpusStatResult
+from .models import ExecutionResult, CorpusStatResult
 
 class CorpusStatTracker:
     def __init__(self, MAP_SIZE: int):

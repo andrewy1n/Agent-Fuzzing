@@ -2,7 +2,7 @@ import time
 import yaml
 import argparse
 import codecs
-from src.ql_emulation import execute_with_qiling
+from agent_fuzzing.ql_emulation import execute_with_qiling
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input', type=str, required=True)

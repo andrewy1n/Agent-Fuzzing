@@ -1,4 +1,4 @@
-from src.fuzzer import AgentFuzzer
+from agent_fuzzing.fuzzer import AgentFuzzer
 
 
 def main():    

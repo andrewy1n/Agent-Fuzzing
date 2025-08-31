@@ -2,7 +2,8 @@ from openai import OpenAI
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import json
-from typing import TYPE_CHECKING, List
+from typing import List
+from .models import ExecutionResult
 
 load_dotenv()
 
@@ -99,6 +100,3 @@ class MutationAgentSession:
             out_preview = (out or "")[:200]
             lines.append(f"- input=<{s}> | state={state_repr} | stdout=<{out_preview}>")
         self.messages.append({"role": "user", "content": "\n".join(lines)})
-
-if TYPE_CHECKING:
-    from fuzzer import ExecutionResult

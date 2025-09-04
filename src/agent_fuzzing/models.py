@@ -41,6 +41,7 @@ class CorpusStatResult(BaseModel):
 
 class FuzzerResult(BaseModel):
     total_executions: int
+    inital_seed_count: int
     corpus_count: int
     crashes_found: int
     total_execution_time_seconds: float

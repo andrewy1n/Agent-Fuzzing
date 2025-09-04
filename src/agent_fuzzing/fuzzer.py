@@ -55,6 +55,7 @@ class AgentFuzzer:
         start_time = time.time()
         execution_count = 0
         execution_time = 0
+        initial_seed_count = 0
 
         for seed_value in self.run_config['input'].get('seed_inputs', []):
             seed_bytes = codecs.decode(seed_value, 'unicode_escape').encode('utf-8')
@@ -75,6 +76,7 @@ class AgentFuzzer:
             execution_count += 1
             execution_time += result.execution_time
             self.corpus_stat_tracker.add_sample(result)
+            initial_seed_count += 1
 
         def _under_time_limit() -> bool:
             time_limit = self.run_config['fuzzer'].get('time_limit', 0)
@@ -150,6 +152,7 @@ class AgentFuzzer:
         
         fuzzer_result = FuzzerResult(
             total_executions=execution_count,
+            inital_seed_count=initial_seed_count,
             corpus_count=len(corpus_results),
             crashes_found=len(crashes),
             total_execution_time_seconds=execution_time,
@@ -166,7 +169,8 @@ class AgentFuzzer:
     def print_summary(self, fuzzer_result: FuzzerResult, crashes: List[CrashResult]):
         print("\n=== Fuzzing Summary ===")
         print(f"Total executions: {fuzzer_result.total_executions}")
-        print(f"Generated corpus count: {fuzzer_result.corpus_count}")
+        print(f"Initial seed count: {fuzzer_result.inital_seed_count}")
+        print(f"Generated corpus count: {fuzzer_result.corpus_count - fuzzer_result.inital_seed_count}")
         print(f"Crashes found: {fuzzer_result.crashes_found}")
         print(f"Total execution time: {fuzzer_result.total_execution_time_seconds:.2f}s")
         print(f"Average execution time: {fuzzer_result.average_execution_time_seconds:.3f}s")
@@ -224,7 +228,8 @@ class AgentFuzzer:
         
         summary = {
             'total_executions': total_executions,
-            'corpus_count': fuzzer_result.corpus_count,
+            'inital_seed_count': fuzzer_result.inital_seed_count,
+            'generated_corpus_count': fuzzer_result.corpus_count - fuzzer_result.inital_seed_count,
             'crashes_found': fuzzer_result.crashes_found,
             'total_execution_time_seconds': fuzzer_result.total_execution_time_seconds,
             'average_execution_time_seconds': fuzzer_result.average_execution_time_seconds,

@@ -16,6 +16,9 @@ class MutationAgentSession:
     def __init__(self, config: dict):
         self.prompt = config['prompt']
         self.model = config['model']
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_tokens = 0
         self.messages = [
             {
                 "role": "system",
@@ -65,6 +68,23 @@ class MutationAgentSession:
         muts = response.output_parsed.mutations
 
         try:
+            if hasattr(response, 'usage') and response.usage:
+                usage = response.usage
+                
+                # Get token counts using 2025 API attribute names
+                input_tokens = getattr(usage, 'input_tokens', 0)
+                output_tokens = getattr(usage, 'output_tokens', 0)
+                total_tokens = getattr(usage, 'total_tokens', input_tokens + output_tokens)
+                
+                # Update totals
+                self.total_prompt_tokens += input_tokens
+                self.total_completion_tokens += output_tokens
+                self.total_tokens += total_tokens
+                
+        except Exception as e:
+            print(f"Warning: Could not track token usage: {e}")
+
+        try:
             self.messages = convo + [{"role": "assistant", "content": json.dumps({"mutations": muts})}]
         except Exception:
             self.messages = convo + [{"role": "assistant", "content": str({"mutations": muts})}]
@@ -86,3 +106,10 @@ class MutationAgentSession:
             out_preview = (out or "")[:200]
             lines.append(f"- input=<{s}> | state={state_repr} | stdout=<{out_preview}>")
         self.messages.append({"role": "user", "content": "\n".join(lines)})
+
+    def get_token_usage(self) -> dict:
+        return {
+            'prompt_tokens': self.total_prompt_tokens,
+            'completion_tokens': self.total_completion_tokens,
+            'total_tokens': self.total_tokens
+        }

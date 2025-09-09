@@ -43,6 +43,7 @@ class AgentFuzzer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.sessions: Dict[str, MutationAgentSession] = {}
         self._popped_seeds: List[bytes] = []
+        self.all_mutations: List[str] = []
         fcfg = self.run_config.get('fuzzer', {})
         self.steps_per_seed = int(fcfg.get('steps_per_seed', 1))
         self.mutations_per_step = int(fcfg.get('mutations_per_step', 10))
@@ -110,6 +111,10 @@ class AgentFuzzer:
                     bad_examples=bad_examples,
                     num=self.mutations_per_step
                 )
+                
+                # Track all mutations for later saving
+                for mutation in mutations:
+                    self.all_mutations.append(mutation.decode('utf-8', errors='replace'))
 
                 coverage_results: list[ExecutionResult] = []
 
@@ -165,6 +170,8 @@ class AgentFuzzer:
         self.save_summary(fuzzer_result)
         self.save_results(corpus_results)
         self.save_crashes(crashes)
+        self.save_mutations()
+        self.save_token_usage()
     
     def print_summary(self, fuzzer_result: FuzzerResult, crashes: List[CrashResult]):
         print("\n=== Fuzzing Summary ===")
@@ -182,6 +189,17 @@ class AgentFuzzer:
         print(f"Max pathlen blocks: {fuzzer_result.corpus_stat_result.max_pathlen_blocks}")
         print(f"Average call depth: {fuzzer_result.corpus_stat_result.avg_calldepth:.2f}")
         print(f"Max call depth: {fuzzer_result.corpus_stat_result.max_calldepth}")
+        
+        # Print token usage
+        total_token_usage = self.get_total_token_usage()
+        print("\n=== Token Usage ===")
+        if total_token_usage['total_tokens'] > 0:
+            print(f"Total prompt tokens: {total_token_usage['prompt_tokens']}")
+            print(f"Total completion tokens: {total_token_usage['completion_tokens']}")
+            print(f"Total tokens: {total_token_usage['total_tokens']}")
+        else:
+            print("Token usage information not available from OpenAI API")
+        print(f"Total mutations generated: {len(self.all_mutations)}")
         
         if crashes:
             print("\n=== Crashes Found ===")
@@ -241,3 +259,53 @@ class AgentFuzzer:
         with open(path, 'w') as f:
             json.dump(summary, f, indent=2)
         print(f"Saved summary to {path}")
+
+    def get_total_token_usage(self) -> dict:
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        total_tokens = 0
+        
+        for session in self.sessions.values():
+            usage = session.get_token_usage()
+            total_prompt_tokens += usage['prompt_tokens']
+            total_completion_tokens += usage['completion_tokens']
+            total_tokens += usage['total_tokens']
+        
+        return {
+            'prompt_tokens': total_prompt_tokens,
+            'completion_tokens': total_completion_tokens,
+            'total_tokens': total_tokens
+        }
+
+    def save_mutations(self):
+        path = self.output_dir / 'mutations.json'
+        mutations_data = {
+            'total_mutations': len(self.all_mutations),
+            'mutations': self.all_mutations
+        }
+        with open(path, 'w') as f:
+            json.dump(mutations_data, f, indent=2)
+        print(f"Saved {len(self.all_mutations)} mutations to {path}")
+
+    def save_token_usage(self):
+        path = self.output_dir / 'token_usage.json'
+        token_usage = self.get_total_token_usage()
+        token_usage['mutations_generated'] = len(self.all_mutations)
+        
+        # Add per-session breakdown
+        session_breakdown = {}
+        for seed_str, session in self.sessions.items():
+            session_breakdown[seed_str] = session.get_token_usage()
+        
+        token_data = {
+            'total_usage': token_usage,
+            'session_breakdown': session_breakdown,
+        }
+        
+        with open(path, 'w') as f:
+            json.dump(token_data, f, indent=2)
+        
+        if token_usage['total_tokens'] > 0:
+            print(f"Saved token usage to {path}")
+        else:
+            print(f"Saved token usage file to {path} (no usage data available from API)")

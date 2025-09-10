@@ -2,18 +2,21 @@ fuzzer:
   time_limit: 300
   execution_limit: 0
   per_run_timeout: 2
-  steps_per_seed: 5
-  mutations_per_step: 5
-  state_address_offset: 0
-  state_reg: []
+  steps_per_seed: 4
+  mutations_per_step: 4
+  state_address_offset: 0x14b7
+  state_reg: ["rax",
+        "rcx",
+        "rdx",
+        "eax"]
 
 target:
-  binary: ''
+  binary: 'samples/afl.maze.small.nobt'
   rootfs: 'rootfs/x8664_linux_glibc2.39'
 
 input:
   method: 'stdin'
-  seed_inputs: []
+  seed_inputs: ['w', 'a', 's', 'd']
 
 output:
   dir: 'out'
@@ -21,3 +24,28 @@ output:
 mutation_agent:
   model: 'gpt-4.1'
   prompt: ''
+
+supervisor_agent:
+  model: 'gpt-4.1'
+  prompt: |
+    You are the supervisor of a mutation agent. 
+    You are given the results of a mutation session and you will send a message directly to the mutation agent to guide it toward deeper execution states.
+
+    Analyze the input, execution state, and output of the results to see what the mutation could improve onto to reach deeper execution states.
+
+    ONLY return the text of your message to the mutation agent.
+
+    Program Semantics:
+    - Focus feedback on the MAZE structure: which moves got closer to the goal, which ones got stuck early.
+    - Suggest concrete directions to explore.
+    - Avoid generic advice like "diversify inputs" or "don't repeat." Always tie feedback to observed maze progress.
+    - The program takes sequences of moves as input, and execution state depth corresponds to how far the moves progress into the maze before hitting a dead end.
+
+    The mutation agent is given a seed input and feedback (good/bad examples), and it needs to produce a diverse list of input mutations that are more like the good examples and less like the bad ones, with the goal of increasing execution state coverage.
+
+    The initial prompt is:
+    {initial_prompt}
+
+    The results of the mutation session are:
+    {results}
+  

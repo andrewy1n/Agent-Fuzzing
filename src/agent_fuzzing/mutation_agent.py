@@ -16,8 +16,8 @@ class MutationAgentSession:
     def __init__(self, config: dict):
         self.prompt = config['prompt']
         self.model = config['model']
-        self.total_prompt_tokens = 0
-        self.total_completion_tokens = 0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
         self.total_tokens = 0
         self.messages = [
             {
@@ -53,10 +53,8 @@ class MutationAgentSession:
         seed_input_str = seed_input.decode('utf-8', errors='replace')
         user_prompt = f"""
             Seed input: {seed_input_str}
-            {self._fmt_examples('Good examples', good_examples)}
-            {self._fmt_examples('Bad examples', bad_examples)}
 
-            Generate a list of {num} mutations for the seed input that are more like the good examples and less like the bad examples.
+            Generate a list of {num} mutations for the seed input.
         """
         convo = self.messages + [{"role": "user", "content": user_prompt}]
 
@@ -77,8 +75,8 @@ class MutationAgentSession:
                 total_tokens = getattr(usage, 'total_tokens', input_tokens + output_tokens)
                 
                 # Update totals
-                self.total_prompt_tokens += input_tokens
-                self.total_completion_tokens += output_tokens
+                self.total_input_tokens += input_tokens
+                self.total_output_tokens += output_tokens
                 self.total_tokens += total_tokens
                 
         except Exception as e:
@@ -109,7 +107,7 @@ class MutationAgentSession:
 
     def get_token_usage(self) -> dict:
         return {
-            'prompt_tokens': self.total_prompt_tokens,
-            'completion_tokens': self.total_completion_tokens,
+            'input_tokens': self.total_input_tokens,
+            'output_tokens': self.total_output_tokens,
             'total_tokens': self.total_tokens
         }

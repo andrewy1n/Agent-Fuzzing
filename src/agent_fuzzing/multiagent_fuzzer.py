@@ -8,9 +8,9 @@ from datetime import datetime
 import codecs
 
 from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult
-from .mutation_agent import MutationAgentSession
 from .ql_emulation import execute_with_qiling
 from .corpus_stat_tracker import CorpusStatTracker
+from .mutation_multiagent import MutationSession
 
 class SeedQueue:
     def __init__(self):
@@ -86,10 +86,9 @@ class AgentFuzzer:
 
         execution_limit = int(self.run_config['fuzzer'].get('execution_limit', 0))
 
+        self.session = MutationSession(config=self.run_config)
+
         stop_due_to_time = False
-
-        self.session = MutationAgentSession(config=self.mutation_agent_config)
-
         while _under_time_limit() and (execution_limit == 0 or execution_count < execution_limit):
             if self.seed_queue.is_empty():
                 self.seed_queue.add_seed(random.choice(self._popped_seeds))
@@ -97,6 +96,8 @@ class AgentFuzzer:
             seed = self.seed_queue.pop_seed()
             self._popped_seeds.append(seed)
             
+            all_mutation_results: list[ExecutionResult] = []
+
             for _step_index in range(self.steps_per_seed):
                 good_examples = random.sample(corpus_results, k=min(5, len(corpus_results)))
                 bad_examples = random.sample(rejected_results, k=min(5, len(rejected_results)))
@@ -112,7 +113,7 @@ class AgentFuzzer:
                 for mutation in mutations:
                     self.all_mutations.append(mutation.decode('utf-8', errors='replace'))
 
-                coverage_results: list[ExecutionResult] = []
+                mutation_results: list[ExecutionResult] = []
 
                 for mutation in mutations:
                     result = execute_with_qiling(mutation, self.run_config)
@@ -133,7 +134,7 @@ class AgentFuzzer:
                     else:
                         rejected_results.append(result)
 
-                    coverage_results.append(result)
+                    mutation_results.append(result)
 
                     execution_count += 1
                     execution_time += result.execution_time
@@ -142,11 +143,14 @@ class AgentFuzzer:
                         stop_due_to_time = True
                         break
                 
-                if coverage_results:
-                    self.session.report_results(coverage_results)
+                if mutation_results:
+                    self.session.report_results(mutation_results)
+                    all_mutation_results.extend(mutation_results)
 
                 if stop_due_to_time:
                     break
+
+            self.session.report_session_results(all_mutation_results)
 
             if stop_due_to_time:
                 break
@@ -257,15 +261,10 @@ class AgentFuzzer:
         print(f"Saved summary to {path}")
 
     def get_total_token_usage(self) -> dict:
-        usage = self.session.get_token_usage()
-        total_input_tokens = usage['input_tokens']
-        total_output_tokens = usage['output_tokens']
-        total_tokens = usage['total_tokens']
-        
         return {
-            'input_tokens': total_input_tokens,
-            'output_tokens': total_output_tokens,
-            'total_tokens': total_tokens
+            'input_tokens': self.session.get_token_usage()['input_tokens'],
+            'output_tokens': self.session.get_token_usage()['output_tokens'],
+            'total_tokens': self.session.get_token_usage()['total_tokens']
         }
 
     def save_mutations(self):

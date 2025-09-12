@@ -8,7 +8,7 @@ from datetime import datetime
 import codecs
 
 from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult
-from .mutation_agent import MutationAgentSession
+from .mutation_engines.single_agent import MutationSession
 from .ql_emulation import execute_with_qiling
 from .corpus_stat_tracker import CorpusStatTracker
 
@@ -47,6 +47,7 @@ class AgentFuzzer:
         self.steps_per_seed = int(fcfg.get('steps_per_seed', 1))
         self.mutations_per_step = int(fcfg.get('mutations_per_step', 10))
         self.mutation_agent_config = self.run_config.get('mutation_agent', {})
+        self.seed_inputs = fcfg.get('seed_inputs', [])
     
     def run(self):
         corpus_results: List[ExecutionResult] = []
@@ -57,7 +58,7 @@ class AgentFuzzer:
         execution_time = 0
         initial_seed_count = 0
 
-        for seed_value in self.run_config['input'].get('seed_inputs', []):
+        for seed_value in self.seed_inputs:
             seed_bytes = codecs.decode(seed_value, 'unicode_escape').encode('utf-8')
             self.seed_queue.add_seed(seed_bytes)
         
@@ -88,7 +89,7 @@ class AgentFuzzer:
 
         stop_due_to_time = False
 
-        self.session = MutationAgentSession(config=self.mutation_agent_config)
+        self.session = MutationSession(config=self.run_config)
 
         while _under_time_limit() and (execution_limit == 0 or execution_count < execution_limit):
             if self.seed_queue.is_empty():
@@ -97,59 +98,47 @@ class AgentFuzzer:
             seed = self.seed_queue.pop_seed()
             self._popped_seeds.append(seed)
             
-            for _step_index in range(self.steps_per_seed):
-                good_examples = random.sample(corpus_results, k=min(5, len(corpus_results)))
-                bad_examples = random.sample(rejected_results, k=min(5, len(rejected_results)))
+            mutations = self.session.propose_mutations(
+                seed_input=seed, 
+            )
+            
+            accepted_results: list[ExecutionResult] = []
+            rejected_results: list[ExecutionResult] = []
 
-                mutations = self.session.propose_mutations(
-                    seed_input=seed, 
-                    good_examples=good_examples, 
-                    bad_examples=bad_examples,
-                    num=self.mutations_per_step
-                )
+            for mutation in mutations:
+                self.all_mutations.append(mutation.decode('utf-8', errors='replace'))
+                result = execute_with_qiling(mutation, self.run_config)
                 
-                # Track all mutations for later saving
-                for mutation in mutations:
-                    self.all_mutations.append(mutation.decode('utf-8', errors='replace'))
+                if result.execution_outcome == ExecutionOutcome.CRASH:
+                    crashes.append(CrashResult(
+                        iteration=execution_count,
+                        input_data=result.input_data.decode('utf-8', errors='replace'),
+                        crash_info=result.crash_info,
+                        execution_time=result.execution_time
+                    ))
 
-                coverage_results: list[ExecutionResult] = []
+                if result.execution_state not in self.state_set:
+                    self.seed_queue.add_seed(mutation)
+                    self.state_set.add(result.execution_state)
+                    corpus_results.append(result)
+                    self.corpus_stat_tracker.add_sample(result)
+                    accepted_results.append(result)
+                else:
+                    rejected_results.append(result)
 
-                for mutation in mutations:
-                    result = execute_with_qiling(mutation, self.run_config)
-                    
-                    if result.execution_outcome == ExecutionOutcome.CRASH:
-                        crashes.append(CrashResult(
-                            iteration=execution_count,
-                            input_data=result.input_data.decode('utf-8', errors='replace'),
-                            crash_info=result.crash_info,
-                            execution_time=result.execution_time
-                        ))
 
-                    if result.execution_state not in self.state_set:
-                        self.seed_queue.add_seed(mutation)
-                        self.state_set.add(result.execution_state)
-                        corpus_results.append(result)
-                        self.corpus_stat_tracker.add_sample(result)
-                    else:
-                        rejected_results.append(result)
-
-                    coverage_results.append(result)
-
-                    execution_count += 1
-                    execution_time += result.execution_time
-                    
-                    if not _under_time_limit():
-                        stop_due_to_time = True
-                        break
+                execution_count += 1
+                execution_time += result.execution_time
                 
-                if coverage_results:
-                    self.session.report_results(coverage_results)
-
-                if stop_due_to_time:
+                if not _under_time_limit():
+                    stop_due_to_time = True
                     break
+            
+            self.session.report_results(good_results=accepted_results, bad_results=rejected_results)
 
             if stop_due_to_time:
                 break
+
         
         fuzzer_result = FuzzerResult(
             total_executions=execution_count,

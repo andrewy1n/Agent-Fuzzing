@@ -2,13 +2,13 @@ import yaml
 import time
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import List
 import random
 from datetime import datetime
 import codecs
 
 from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult
-from .mutation_agent import MutationAgentSession
+from .mutation_engines.single_agent import MutationSession
 from .ql_emulation import execute_with_qiling
 from .corpus_stat_tracker import CorpusStatTracker
 
@@ -41,13 +41,13 @@ class AgentFuzzer:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.output_dir = Path(output_root) / timestamp
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.sessions: Dict[str, MutationAgentSession] = {}
         self._popped_seeds: List[bytes] = []
         self.all_mutations: List[str] = []
         fcfg = self.run_config.get('fuzzer', {})
         self.steps_per_seed = int(fcfg.get('steps_per_seed', 1))
         self.mutations_per_step = int(fcfg.get('mutations_per_step', 10))
         self.mutation_agent_config = self.run_config.get('mutation_agent', {})
+        self.seed_inputs = fcfg.get('seed_inputs', [])
     
     def run(self):
         corpus_results: List[ExecutionResult] = []
@@ -58,7 +58,7 @@ class AgentFuzzer:
         execution_time = 0
         initial_seed_count = 0
 
-        for seed_value in self.run_config['input'].get('seed_inputs', []):
+        for seed_value in self.seed_inputs:
             seed_bytes = codecs.decode(seed_value, 'unicode_escape').encode('utf-8')
             self.seed_queue.add_seed(seed_bytes)
         
@@ -88,72 +88,57 @@ class AgentFuzzer:
         execution_limit = int(self.run_config['fuzzer'].get('execution_limit', 0))
 
         stop_due_to_time = False
+
+        self.session = MutationSession(config=self.run_config)
+
         while _under_time_limit() and (execution_limit == 0 or execution_count < execution_limit):
             if self.seed_queue.is_empty():
                 self.seed_queue.add_seed(random.choice(self._popped_seeds))
             
             seed = self.seed_queue.pop_seed()
             self._popped_seeds.append(seed)
-            seed_str = seed.decode('utf-8', errors='replace')
-            session = self.sessions.get(seed_str)
             
-            if session is None:
-                session = MutationAgentSession(config=self.mutation_agent_config)
-                self.sessions[seed_str] = session
+            mutations = self.session.propose_mutations(
+                seed_input=seed, 
+            )
+            
+            accepted_results: list[ExecutionResult] = []
+            rejected_results: list[ExecutionResult] = []
 
-            for _step_index in range(self.steps_per_seed):
-                good_examples = random.sample(corpus_results, k=min(5, len(corpus_results)))
-                bad_examples = random.sample(rejected_results, k=min(5, len(rejected_results)))
-
-                mutations = session.propose_mutations(
-                    seed_input=seed, 
-                    good_examples=good_examples, 
-                    bad_examples=bad_examples,
-                    num=self.mutations_per_step
-                )
+            for mutation in mutations:
+                self.all_mutations.append(mutation.decode('utf-8', errors='replace'))
+                result = execute_with_qiling(mutation, self.run_config)
                 
-                # Track all mutations for later saving
-                for mutation in mutations:
-                    self.all_mutations.append(mutation.decode('utf-8', errors='replace'))
+                if result.execution_outcome == ExecutionOutcome.CRASH:
+                    crashes.append(CrashResult(
+                        iteration=execution_count,
+                        input_data=result.input_data.decode('utf-8', errors='replace'),
+                        crash_info=result.crash_info,
+                        execution_time=result.execution_time
+                    ))
 
-                coverage_results: list[ExecutionResult] = []
+                if result.execution_state not in self.state_set:
+                    self.seed_queue.add_seed(mutation)
+                    self.state_set.add(result.execution_state)
+                    corpus_results.append(result)
+                    self.corpus_stat_tracker.add_sample(result)
+                    accepted_results.append(result)
+                else:
+                    rejected_results.append(result)
 
-                for mutation in mutations:
-                    result = execute_with_qiling(mutation, self.run_config)
-                    
-                    if result.execution_outcome == ExecutionOutcome.CRASH:
-                        crashes.append(CrashResult(
-                            iteration=execution_count,
-                            input_data=result.input_data.decode('utf-8', errors='replace'),
-                            crash_info=result.crash_info,
-                            execution_time=result.execution_time
-                        ))
 
-                    if result.execution_state not in self.state_set:
-                        self.seed_queue.add_seed(mutation)
-                        self.state_set.add(result.execution_state)
-                        corpus_results.append(result)
-                        self.corpus_stat_tracker.add_sample(result)
-                    else:
-                        rejected_results.append(result)
-
-                    coverage_results.append(result)
-
-                    execution_count += 1
-                    execution_time += result.execution_time
-                    
-                    if not _under_time_limit():
-                        stop_due_to_time = True
-                        break
+                execution_count += 1
+                execution_time += result.execution_time
                 
-                if coverage_results:
-                    session.report_results(coverage_results)
-
-                if stop_due_to_time:
+                if not _under_time_limit():
+                    stop_due_to_time = True
                     break
+            
+            self.session.report_results(good_results=accepted_results, bad_results=rejected_results)
 
             if stop_due_to_time:
                 break
+
         
         fuzzer_result = FuzzerResult(
             total_executions=execution_count,
@@ -194,8 +179,8 @@ class AgentFuzzer:
         total_token_usage = self.get_total_token_usage()
         print("\n=== Token Usage ===")
         if total_token_usage['total_tokens'] > 0:
-            print(f"Total prompt tokens: {total_token_usage['prompt_tokens']}")
-            print(f"Total completion tokens: {total_token_usage['completion_tokens']}")
+            print(f"Total input tokens: {total_token_usage['input_tokens']}")
+            print(f"Total output tokens: {total_token_usage['output_tokens']}")
             print(f"Total tokens: {total_token_usage['total_tokens']}")
         else:
             print("Token usage information not available from OpenAI API")
@@ -261,19 +246,14 @@ class AgentFuzzer:
         print(f"Saved summary to {path}")
 
     def get_total_token_usage(self) -> dict:
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-        total_tokens = 0
-        
-        for session in self.sessions.values():
-            usage = session.get_token_usage()
-            total_prompt_tokens += usage['prompt_tokens']
-            total_completion_tokens += usage['completion_tokens']
-            total_tokens += usage['total_tokens']
+        usage = self.session.get_token_usage()
+        total_input_tokens = usage['input_tokens']
+        total_output_tokens = usage['output_tokens']
+        total_tokens = usage['total_tokens']
         
         return {
-            'prompt_tokens': total_prompt_tokens,
-            'completion_tokens': total_completion_tokens,
+            'input_tokens': total_input_tokens,
+            'output_tokens': total_output_tokens,
             'total_tokens': total_tokens
         }
 
@@ -281,6 +261,7 @@ class AgentFuzzer:
         path = self.output_dir / 'mutations.json'
         mutations_data = {
             'total_mutations': len(self.all_mutations),
+            'unique_mutations': len(set(self.all_mutations)),
             'mutations': self.all_mutations
         }
         with open(path, 'w') as f:
@@ -292,14 +273,8 @@ class AgentFuzzer:
         token_usage = self.get_total_token_usage()
         token_usage['mutations_generated'] = len(self.all_mutations)
         
-        # Add per-session breakdown
-        session_breakdown = {}
-        for seed_str, session in self.sessions.items():
-            session_breakdown[seed_str] = session.get_token_usage()
-        
         token_data = {
             'total_usage': token_usage,
-            'session_breakdown': session_breakdown,
         }
         
         with open(path, 'w') as f:

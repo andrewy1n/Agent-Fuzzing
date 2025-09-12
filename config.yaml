@@ -1,23 +1,155 @@
+_meta:
+  editable_keys:
+    - fuzzer.state_address_offset
+    - fuzzer.state_reg
+    - fuzzer.seed_inputs
+    - mutation_agent.prompt
+
 fuzzer:
-  time_limit: 300
+  time_limit: 60
   execution_limit: 0
-  per_run_timeout: 2
-  steps_per_seed: 5
-  mutations_per_step: 5
-  state_address_offset: 0
-  state_reg: []
+  per_run_timeout: 5
+  steps_per_seed: 4
+  mutations_per_step: 4
+  round_length: 10
+  state_address_offset: 0x29c8
+  state_reg: [
+    "eax",
+    "edx",
+    "ecx",
+    "esi",
+    "edi"
+  ]
+  seed_inputs: ['1,1 1,2', '1,0 2,2', '0,1 0,2', '6,1 6,2', '6,7 5,5', '9', '666']
 
 target:
-  binary: ''
+  binary: 'samples/CROMU_00005'
   rootfs: 'rootfs/x8664_linux_glibc2.39'
+  grammar_prompt: |
+    Basic Input Format:
+    Chess moves: x,y x,y (source coordinates, space, destination coordinates)
+    Commands: 9 (display board) or 666 (quit game) \n (new move) alternates between black and white pieces
+    Coordinate System:
+      8x8 board with coordinates (0,0) to (7,7)
+      x: horizontal (0-7, left to right)
+      y: vertical (0-7, bottom to top)
+    Chess Piece Movement Rules:
+      Pawns: Move forward one square (white: y+1, black: y-1)
+      Knights: L-shaped moves (2+1 or 1+2 squares)
+      Bishops: Diagonal moves any distance
+      Rooks: Horizontal/vertical moves any distance
+      Queens: Combine bishop and rook movement
+      Kings: One square in any direction  
 
 input:
   method: 'stdin'
-  seed_inputs: []
 
 output:
   dir: 'out'
 
 mutation_agent:
   model: 'gpt-4.1'
-  prompt: ''
+  prompt: |
+    Basic Input Format:
+      Chess moves: x,y x,y (source coordinates, space, destination coordinates)
+      Commands: 9 (display board) or 666 (quit game) \n (new move) alternates between black and white pieces
+      Coordinate System:
+        8x8 board with coordinates (0,0) to (7,7)
+        x: horizontal (0-7, left to right)
+        y: vertical (0-7, bottom to top)
+      Chess Piece Movement Rules:
+        Pawns: Move forward one square (white: y+1, black: y-1)
+        Knights: L-shaped moves (2+1 or 1+2 squares)
+        Bishops: Diagonal moves any distance
+        Rooks: Horizontal/vertical moves any distance
+        Queens: Combine bishop and rook movement
+        Kings: One square in any direction  
+
+generator_agent:
+  model: 'gpt-4.1'
+  system_prompt: |
+    You are a mutation agent for a agent-driven fuzzer.
+    Your job: given a seed input and feedback (good/bad examples), produce a diverse list of input mutations that are more like the good examples and less like the bad ones, with the goal of increasing execution state coverage.
+
+    You will be given feedback from a critic agent that will guide you toward deeper execution states, make sure to follow the most recent instructions.
+
+    Output format:
+    - Return ONLY a JSON object that matches this schema: {"mutations": [string, ...]}.
+    - Each element in "mutations" is a single test input as a UTF-8 string (it will be converted to bytes by the harness).
+    - Do not include explanations, comments, or code fences.
+  grammar_prompt: |
+    Basic Input Format:
+      Chess moves: x,y x,y (source coordinates, space, destination coordinates)
+      Commands: 9 (display board) or 666 (quit game) \n (new move) alternates between black and white pieces
+      Coordinate System:
+        8x8 board with coordinates (0,0) to (7,7)
+        x: horizontal (0-7, left to right)
+        y: vertical (0-7, bottom to top)
+      Chess Piece Movement Rules:
+        Pawns: Move forward one square (white: y+1, black: y-1)
+        Knights: L-shaped moves (2+1 or 1+2 squares)
+        Bishops: Diagonal moves any distance
+        Rooks: Horizontal/vertical moves any distance
+        Queens: Combine bishop and rook movement
+        Kings: One square in any direction 
+  goal_prompt: |
+
+summarizer_agent:
+  model: 'gpt-5-mini'
+  system_prompt: |
+    You are a summarizer agent. Your task is to analyze all the mutation results from a fuzzer. 
+    You are given two lists:
+    1. Failed mutations (did not expand coverage).
+    2. Successful mutations (expanded coverage).
+
+    Your goal is to produce a concise, structured summary of the mutation results.
+
+    ### Instructions:
+    - Identify common **patterns in failures** (e.g., repeated sources, small shifts, 
+      horizontal/vertical moves, etc.).
+    - Identify common **patterns in successes** (e.g., diagonal jumps, moves from certain 
+      rows/columns).
+    - Provide a few **representative examples** of failed and successful mutations 
+      (not the full list).
+
+    Keep the summary short and clear.
+
+    ### Input:
+    Failed mutations:
+    {failed_mutations}
+
+    Successful mutations:
+    {successful_mutations}
+
+    ### Output format:
+    Summary of last round:
+    - Failed patterns: ...
+    - Successful patterns: ...
+    - Representative examples:
+      - Successful: [...]
+      - Failed: [...]
+
+
+critic_agent:
+  model: 'gpt-4.1'
+  system_prompt: |
+    You are the critic of a mutation agent. 
+    You are given the results of a mutation session and you will send a message directly to the mutation agent to guide it toward deeper execution states.
+
+    Analyze the input, execution state, and output of the results to see what the mutation could improve onto to reach deeper execution states.
+
+    ONLY return the text of your message to the mutation agent.
+
+    Program Semantics:
+    - Focus feedback on the MAZE structure: which moves got closer to the goal, which ones got stuck early.
+    - Suggest concrete directions to explore.
+    - Avoid generic advice like "diversify inputs" or "don't repeat." Always tie feedback to observed maze progress.
+    - The program takes sequences of moves as input, and execution state depth corresponds to how far the moves progress into the maze before hitting a dead end.
+
+    The mutation agent is given a seed input and feedback (good/bad examples), and it needs to produce a diverse list of input mutations that are more like the good examples and less like the bad ones, with the goal of increasing execution state coverage.
+
+    The initial prompt is:
+    {initial_prompt}
+
+    The results of the mutation session are:
+    {results}

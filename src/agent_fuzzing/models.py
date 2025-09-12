@@ -50,3 +50,8 @@ class FuzzerResult(BaseModel):
     corpus_stat_result: CorpusStatResult
 
 ExecutionStateSet = set[tuple]
+
+class TokenUsage(BaseModel):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int

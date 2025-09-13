@@ -127,20 +127,23 @@ class AgentFuzzer:
                     stop_due_to_time = True
                     break
             
-            self.session.report_results(good_results=accepted_results, bad_results=rejected_results)
-
             if stop_due_to_time:
                 break
+            
+            self.session.report_results(good_results=accepted_results, bad_results=rejected_results)
         
         fuzzer_result = FuzzerResult(
             total_executions=execution_count,
             inital_seed_count=initial_seed_count,
-            corpus_count=len(corpus_results),
+            generated_corpus_count=len(corpus_results) - initial_seed_count,
+            total_mutations=len(self.all_mutations),
+            unique_mutations=len(set(self.all_mutations)),
             crashes_found=len(crashes),
             total_execution_time_seconds=execution_time,
             average_execution_time_seconds=execution_time / execution_count if execution_count > 0 else 0,
             crash_rate=((len(crashes) / execution_count) if execution_count > 0 else 0),
             corpus_stat_result=self.corpus_stat_tracker.get_result(),
+            token_usage=self.session.get_token_usage(),
         )
 
         self.print_summary(fuzzer_result, crashes)
@@ -148,13 +151,12 @@ class AgentFuzzer:
         self.save_results(corpus_results)
         self.save_crashes(crashes)
         self.save_mutations()
-        self.save_token_usage()
     
     def print_summary(self, fuzzer_result: FuzzerResult, crashes: List[CrashResult]):
         print("\n=== Fuzzing Summary ===")
         print(f"Total executions: {fuzzer_result.total_executions}")
         print(f"Initial seed count: {fuzzer_result.inital_seed_count}")
-        print(f"Generated corpus count: {fuzzer_result.corpus_count - fuzzer_result.inital_seed_count}")
+        print(f"Generated corpus count: {fuzzer_result.generated_corpus_count}")
         print(f"Crashes found: {fuzzer_result.crashes_found}")
         print(f"Total execution time: {fuzzer_result.total_execution_time_seconds:.2f}s")
         print(f"Average execution time: {fuzzer_result.average_execution_time_seconds:.3f}s")
@@ -167,15 +169,16 @@ class AgentFuzzer:
         print(f"Average call depth: {fuzzer_result.corpus_stat_result.avg_calldepth:.2f}")
         print(f"Max call depth: {fuzzer_result.corpus_stat_result.max_calldepth}")
         
-        total_token_usage = self.session.get_token_usage()
+        token_usage = fuzzer_result.token_usage
         print("\n=== Token Usage ===")
-        if total_token_usage.total_tokens > 0:
-            print(f"Total input tokens: {total_token_usage.input_tokens}")
-            print(f"Total output tokens: {total_token_usage.output_tokens}")
-            print(f"Total tokens: {total_token_usage.total_tokens}")
+        if token_usage.total_tokens > 0:
+            print(f"Total input tokens: {token_usage.input_tokens}")
+            print(f"Total output tokens: {token_usage.output_tokens}")
+            print(f"Total tokens: {token_usage.total_tokens}")
         else:
             print("Token usage information not available from OpenAI API")
-        print(f"Total mutations generated: {len(self.all_mutations)}")
+        print(f"Total mutations generated: {fuzzer_result.total_mutations}")
+        print(f"Unique mutations generated: {fuzzer_result.unique_mutations}")
         
         if crashes:
             print("\n=== Crashes Found ===")
@@ -217,48 +220,17 @@ class AgentFuzzer:
             json.dump(serializable, f, indent=2)
         print(f"Saved {len(results)} results to {path}")
 
-    def save_summary(self, fuzzer_result: FuzzerResult):
-        total_executions = fuzzer_result.total_executions
-        
-        summary = {
-            'total_executions': total_executions,
-            'inital_seed_count': fuzzer_result.inital_seed_count,
-            'generated_corpus_count': fuzzer_result.corpus_count - fuzzer_result.inital_seed_count,
-            'crashes_found': fuzzer_result.crashes_found,
-            'total_execution_time_seconds': fuzzer_result.total_execution_time_seconds,
-            'average_execution_time_seconds': fuzzer_result.average_execution_time_seconds,
-            'crash_rate': fuzzer_result.crash_rate,
-            'corpus_stat_result': fuzzer_result.corpus_stat_result.model_dump(),
-        }
-
+    def save_summary(self, fuzzer_result: FuzzerResult):        
         path = self.output_dir / 'summary.json'
         with open(path, 'w') as f:
-            json.dump(summary, f, indent=2)
+            json.dump(fuzzer_result.model_dump(), f, indent=2)
         print(f"Saved summary to {path}")
 
     def save_mutations(self):
         path = self.output_dir / 'mutations.json'
         mutations_data = {
-            'total_mutations': len(self.all_mutations),
-            'unique_mutations': len(set(self.all_mutations)),
             'mutations': self.all_mutations
         }
         with open(path, 'w') as f:
             json.dump(mutations_data, f, indent=2)
         print(f"Saved {len(self.all_mutations)} mutations to {path}")
-
-    def save_token_usage(self):
-        path = self.output_dir / 'token_usage.json'
-        token_usage = self.session.get_token_usage()
-        
-        token_data = {
-            'total_usage': token_usage.model_dump(),
-        }
-        
-        with open(path, 'w') as f:
-            json.dump(token_data, f, indent=2)
-        
-        if token_usage.total_tokens > 0:
-            print(f"Saved token usage to {path}")
-        else:
-            print(f"Saved token usage file to {path} (no usage data available from API)")

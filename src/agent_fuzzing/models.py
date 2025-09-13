@@ -39,19 +39,23 @@ class CorpusStatResult(BaseModel):
     avg_calldepth: float
     max_calldepth: int
 
+class TokenUsage(BaseModel):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    
 class FuzzerResult(BaseModel):
     total_executions: int
     inital_seed_count: int
-    corpus_count: int
+    generated_corpus_count: int
+    total_mutations: int
+    unique_mutations: int
     crashes_found: int
     total_execution_time_seconds: float
     average_execution_time_seconds: float
     crash_rate: float
     corpus_stat_result: CorpusStatResult
+    token_usage: TokenUsage
 
 ExecutionStateSet = set[tuple]
 
-class TokenUsage(BaseModel):
-    input_tokens: int
-    output_tokens: int
-    total_tokens: int

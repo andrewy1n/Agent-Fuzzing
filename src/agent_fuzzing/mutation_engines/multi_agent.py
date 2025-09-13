@@ -2,6 +2,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import json
+import requests
 from typing import List
 from ..models import ExecutionResult, TokenUsage
 
@@ -13,12 +14,12 @@ class Mutations(BaseModel):
     mutations: list[str]
 
 class GeneratorAgent:
-    def __init__(self, config: dict, grammar_prompt: str):
+    def __init__(self, config: dict):
         self.model = config['model']
         self.messages = [
             {
                 "role": "system",
-                "content": config['system_prompt'] + grammar_prompt
+                "content": config['system_prompt'] + config['grammar_prompt']
             },
             {
                 "role": "user",
@@ -29,7 +30,6 @@ class GeneratorAgent:
 
     def run(self, mutation_prompt: str):
         mutation_prompt += self.goal_prompt
-        print(self.messages)
         response = client.responses.parse(
             model=self.model,
             input=self.messages + [{"role": "user", "content": mutation_prompt}],
@@ -43,10 +43,10 @@ class GeneratorAgent:
     def add_mutation_feedback(self, good_mutations: List["ExecutionResult"], bad_mutations: List["ExecutionResult"]):
         self.messages.append({
             "role": "user",
-            "content": self.fmt_results("Increased execution state coverage:", good_mutations) + self.fmt_results("Did not increase execution state coverage:", bad_mutations)
+            "content": self._fmt_results("Increased execution state coverage:", good_mutations) + self._fmt_results("Did not increase execution state coverage:", bad_mutations)
         })
     
-    def fmt_results(self, header: str, results: List["ExecutionResult"]) -> str:
+    def _fmt_results(self, header: str, results: List["ExecutionResult"]) -> str:
         if not results:
             return f"{header}\n  (none)"
         lines = [f"  - {result.input_data.decode('utf-8', errors='replace')}" for result in results]
@@ -55,6 +55,9 @@ class GeneratorAgent:
     def add_summary(self, summary: str):
         self.messages[1]['content'] = summary
         self.messages = self.messages[:2]
+    
+    def edit_goal_prompt(self, goal_prompt: str):
+        self.goal_prompt = goal_prompt
 
 class SummarizerAgent:
     def __init__(self, config: dict):
@@ -81,43 +84,85 @@ class SummarizerAgent:
 
 class CriticAgent:
     def __init__(self, config: dict):
-        self.model = config['model']
-        self.messages = [
-            {
-                "role": "system",
-                "content": config['system_prompt']
-            }
-        ]
+        self.server = config['server']
+        self.initial_prompt = config['initial_prompt']
+        self.thread_id = config['thread_id']
+        self.binary_path = config['binary_path']
 
-    def run(self, user_prompt: str):
-        self.messages.extend([{"role": "user", "content": user_prompt}])
-        response = client.responses.create(
-            model=self.model,
-            input=self.messages,
-        )
-        return response
+    def run(self, accepted_results: List["ExecutionResult"], rejected_results: List["ExecutionResult"]):
+        accepted_results_str = self._fmt_results("Accepted results:", accepted_results)
+        rejected_results_str = self._fmt_results("Rejected results:", rejected_results)
+        
+        payload = {
+            "thread_id": self.thread_id,
+            "binary_path": self.binary_path,
+            "prompt": self.initial_prompt + accepted_results_str + rejected_results_str,
+            "recursion_limit": 5
+        }
+        
+        try:
+            response = requests.post(
+                f"{self.server}/continue_conversation",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                stream=True
+            )
+            response.raise_for_status()
+
+            full_content = ""
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8')
+                    if line_str.startswith('data: '):
+                        content = line_str[6:]
+                        if content.strip() == '[DONE]':
+                            break
+                        full_content += content
+                    elif line_str.strip():
+                        full_content += line_str
+
+            if full_content.strip().startswith('{') or full_content.strip().startswith('['):
+                try:
+                    return {"data": json.loads(full_content)}
+                except json.JSONDecodeError:
+                    pass
+            
+            return {"data": full_content.strip()}
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Error calling continue-conversation API: {e}")
+            return {"data": f"API Error: {e}"}
+    
+    def _fmt_results(self, header: str, results: List["ExecutionResult"]) -> str:
+        if not results:
+            return f"{header}\n  (none)"
+        lines = [f"  - {result.input_data.decode('utf-8', errors='replace')}" for result in results]
+        return f"{header}\n" + "\n".join(lines)
 
 class MutationSession:
     def __init__(self, config: dict):
-        self.generator = GeneratorAgent(config=config['generator_agent'], grammar_prompt=config['target']['grammar_prompt'])
+        self.generator = GeneratorAgent(config=config['generator_agent'])
         self.summarizer = SummarizerAgent(config=config['summarizer_agent'])
         self.critic = CriticAgent(config=config['critic_agent'])
-        self.total_input_tokens = 0
-        self.total_output_tokens = 0
-        self.total_tokens = 0
+        self.token_usage = TokenUsage(
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0
+        )
+        self.mutations_per_seed = config['fuzzer']['mutations_per_seed']
 
-    def propose_mutations(self, seed_input: bytes, num: int = 5) -> list[bytes]:
+    def propose_mutations(self, seed_input: bytes) -> list[bytes]:
         seed_input_str = seed_input.decode('utf-8', errors='replace')
         mutation_prompt = f"""
             Seed input: {seed_input_str}
 
-            Generate a list of {num} mutations for the seed input.
+            Generate a list of {self.mutations_per_seed} mutations for the seed input.
         """
         response = self.generator.run(mutation_prompt=mutation_prompt)
         muts = response.output_parsed.mutations
-        self.total_input_tokens += response.usage.input_tokens
-        self.total_output_tokens += response.usage.output_tokens
-        self.total_tokens += response.usage.total_tokens
+        self.token_usage.input_tokens += response.usage.input_tokens
+        self.token_usage.output_tokens += response.usage.output_tokens
+        self.token_usage.total_tokens += response.usage.total_tokens
 
         return [m.encode('utf-8') for m in muts]
 
@@ -130,23 +175,16 @@ class MutationSession:
         all_bad_mutations = all_bad_mutations - all_good_mutations
 
         response = self.summarizer.run(all_good_mutations, all_bad_mutations)
-        self.total_input_tokens += response.usage.input_tokens
-        self.total_output_tokens += response.usage.output_tokens
-        self.total_tokens += response.usage.total_tokens
+        self.token_usage.input_tokens += response.usage.input_tokens
+        self.token_usage.output_tokens += response.usage.output_tokens
+        self.token_usage.total_tokens += response.usage.total_tokens
         self.generator.add_summary(response.output_text)
     
-    def report_session_results(self, results: List["ExecutionResult"]):
-        response = self.critic.run(self._fmt_examples("Results of previous mutation session:", results))
-        critic_message = response.output_text
-        self.total_input_tokens += response.usage.input_tokens
-        self.total_output_tokens += response.usage.output_tokens
-        self.total_tokens += response.usage.total_tokens
-        self.generator.messages.append({"role": "user", "content": critic_message})
+    def generate_critique(self, accepted_results: List["ExecutionResult"], rejected_results: List["ExecutionResult"]):
+        response = self.critic.run(accepted_results, rejected_results)
+        critic_message = response["data"]
+        self.generator.edit_goal_prompt(critic_message)
         print(f"Critic message: {critic_message}")
 
     def get_token_usage(self) -> TokenUsage:
-        return TokenUsage(
-            input_tokens=self.total_input_tokens,
-            output_tokens=self.total_output_tokens,
-            total_tokens=self.total_tokens
-        )
+        return self.token_usage

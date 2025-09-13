@@ -31,23 +31,18 @@ class AgentFuzzer:
         self.state_set: ExecutionStateSet = set()
         self.seed_queue = SeedQueue()
         self.corpus_stat_tracker = CorpusStatTracker(MAP_SIZE=(1 << 16))
-        output_cfg = self.run_config.get('output', {})
+        output_cfg = self.run_config['output']
 
-        if isinstance(output_cfg, dict):
-            output_root = output_cfg.get('dir', 'out')
-        else:
-            output_root = 'out'
+        output_root = output_cfg['dir']
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.output_dir = Path(output_root) / timestamp
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._popped_seeds: List[bytes] = []
         self.all_mutations: List[str] = []
-        fcfg = self.run_config.get('fuzzer', {})
-        self.steps_per_seed = int(fcfg.get('steps_per_seed', 1))
-        self.mutations_per_step = int(fcfg.get('mutations_per_step', 10))
-        self.round_length = int(fcfg.get('round_length', 5))
-        self.seed_inputs = fcfg.get('seed_inputs', [])
+        fcfg = self.run_config['fuzzer']
+        self.round_length = fcfg['round_length']
+        self.seed_inputs = fcfg['seed_inputs']
     
     def run(self):
         corpus_results: List[ExecutionResult] = []
@@ -80,29 +75,29 @@ class AgentFuzzer:
             initial_seed_count += 1
 
         def _under_time_limit() -> bool:
-            time_limit = self.run_config['fuzzer'].get('time_limit', 0)
+            time_limit = self.run_config['fuzzer']['time_limit']
             if time_limit and time_limit > 0:
                 return (time.time() - start_time) < time_limit
             return True
 
-        execution_limit = int(self.run_config['fuzzer'].get('execution_limit', 0))
+        execution_limit = self.run_config['fuzzer']['execution_limit']
 
         self.session = MutationSession(config=self.run_config)
 
         stop_due_to_time = False
         all_accepted_results: list[ExecutionResult] = []
         all_rejected_results: list[ExecutionResult] = []
-        while _under_time_limit() and (execution_limit == 0 or execution_count < execution_limit):       
+
+        while _under_time_limit() and (execution_limit == 0 or execution_count < execution_limit):
+            round_accepted_results: list[ExecutionResult] = []       
+            round_rejected_results: list[ExecutionResult] = []
             for _ in range(self.round_length):
                 if self.seed_queue.is_empty():
                     self.seed_queue.add_seed(random.choice(self._popped_seeds))
                 
                 seed = self.seed_queue.pop_seed()
                 self._popped_seeds.append(seed)
-                mutations = self.session.propose_mutations(
-                    seed_input=seed, 
-                    num=self.mutations_per_step
-                )
+                mutations = self.session.propose_mutations(seed_input=seed)
 
                 accepted_results: list[ExecutionResult] = []
                 rejected_results: list[ExecutionResult] = []
@@ -139,11 +134,14 @@ class AgentFuzzer:
                     self.session.report_results(accepted_results, rejected_results)
                     all_accepted_results.extend(accepted_results)
                     all_rejected_results.extend(rejected_results)
+                    round_accepted_results.extend(accepted_results)
+                    round_rejected_results.extend(rejected_results)
 
                 if stop_due_to_time:
                     break
 
-            self.session.generate_summary(all_accepted_results, all_rejected_results)
+            # self.session.generate_summary(all_accepted_results, all_rejected_results)   
+            self.session.generate_critique(round_accepted_results, round_rejected_results)
 
             if stop_due_to_time:
                 break
@@ -229,9 +227,12 @@ class AgentFuzzer:
                 'pathlen_blocks': r.pathlen_blocks,
                 'call_depth': r.call_depth,
             }
+
         serializable = [serialize_result(r) for r in results]
+
         with open(path, 'w') as f:
             json.dump(serializable, f, indent=2)
+
         print(f"Saved {len(results)} results to {path}")
 
     def save_summary(self, fuzzer_result: FuzzerResult):

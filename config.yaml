@@ -3,11 +3,11 @@ _meta:
     - fuzzer.state_address_offset
     - fuzzer.state_reg
     - fuzzer.seed_inputs
-    - target.grammar_prompt
+    - generator_agent.grammar_prompt
     - generator_agent.goal_prompt
 
 fuzzer:
-  time_limit: 5
+  time_limit: 20
   execution_limit: 0
   per_run_timeout: 5
   mutations_per_seed: 4

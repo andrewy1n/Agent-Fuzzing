@@ -80,6 +80,7 @@ critic_agent:
   server: 'http://localhost:8000'
   thread_id: ''
   binary_path: ''
+  results_dir: ''
   initial_prompt: |
     You are acting as the critic of a mutation agent. 
     You are given the results of a mutation session and you will send a message directly to the mutation agent to guide it toward deeper execution states.

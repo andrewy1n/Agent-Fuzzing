@@ -88,6 +88,7 @@ class CriticAgent:
         self.initial_prompt = config['initial_prompt']
         self.thread_id = config['thread_id']
         self.binary_path = config['binary_path']
+        self.results_dir = config['results_dir']
 
     def run(self, accepted_results: List["ExecutionResult"], rejected_results: List["ExecutionResult"]):
         accepted_results_str = self._fmt_results("Accepted results:", accepted_results)
@@ -96,6 +97,7 @@ class CriticAgent:
         payload = {
             "thread_id": self.thread_id,
             "binary_path": self.binary_path,
+            "results_dir": self.results_dir,
             "prompt": self.initial_prompt + accepted_results_str + rejected_results_str,
             "recursion_limit": 5
         }

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import json
 import requests
 from typing import List
-from ..models import ExecutionResult, TokenUsage
+from ..models import ExecutionResult, MultiAgentTokenUsage, TokenUsage
 
 load_dotenv()
 
@@ -27,6 +27,11 @@ class GeneratorAgent:
             }
         ]
         self.goal_prompt = config['goal_prompt']
+        self.token_usage = TokenUsage(
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0
+        )
 
     def run(self, mutation_prompt: str):
         mutation_prompt += self.goal_prompt
@@ -38,6 +43,9 @@ class GeneratorAgent:
         muts = response.output_parsed.mutations
 
         self.messages.append({"role": "assistant", "content": json.dumps({"mutations": muts})})
+        self.token_usage.input_tokens += response.usage.input_tokens
+        self.token_usage.output_tokens += response.usage.output_tokens
+        self.token_usage.total_tokens += response.usage.total_tokens
         return response
     
     def add_mutation_feedback(self, good_mutations: List["ExecutionResult"], bad_mutations: List["ExecutionResult"]):
@@ -89,6 +97,11 @@ class CriticAgent:
         self.thread_id = config['thread_id']
         self.binary_path = config['binary_path']
         self.results_dir = config['results_dir']
+        self.token_usage = TokenUsage(
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0
+        )
 
     def run(self, accepted_results: List["ExecutionResult"], rejected_results: List["ExecutionResult"]):
         accepted_results_str = self._fmt_results("Accepted results:", accepted_results)
@@ -121,7 +134,19 @@ class CriticAgent:
                             break
                         full_content += content
                     elif line_str.strip():
-                        full_content += line_str
+                        # Check if this line contains token usage statistics
+                        if line_str.strip().startswith('{') and '"type": "stats"' in line_str:
+                            try:
+                                stats_data = json.loads(line_str.strip())
+                                if stats_data.get("type") == "stats" and "tokens" in stats_data:
+                                    tokens = stats_data["tokens"]
+                                    self.token_usage.input_tokens += tokens.get("input", 0)
+                                    self.token_usage.output_tokens += tokens.get("output", 0)
+                                    self.token_usage.total_tokens += tokens.get("total", 0)
+                            except json.JSONDecodeError:
+                                pass
+                        else:
+                            full_content += line_str
 
             if full_content.strip().startswith('{') or full_content.strip().startswith('['):
                 try:
@@ -140,17 +165,15 @@ class CriticAgent:
             return f"{header}\n  (none)"
         lines = [f"  - {result.input_data.decode('utf-8', errors='replace')}" for result in results]
         return f"{header}\n" + "\n".join(lines)
+    
+    def get_token_usage(self) -> TokenUsage:
+        return self.token_usage
 
 class MutationSession:
     def __init__(self, config: dict):
         self.generator = GeneratorAgent(config=config['generator_agent'])
         self.summarizer = SummarizerAgent(config=config['summarizer_agent'])
         self.critic = CriticAgent(config=config['critic_agent'])
-        self.token_usage = TokenUsage(
-            input_tokens=0,
-            output_tokens=0,
-            total_tokens=0
-        )
         self.mutations_per_seed = config['fuzzer']['mutations_per_seed']
 
     def propose_mutations(self, seed_input: bytes) -> list[bytes]:
@@ -162,9 +185,6 @@ class MutationSession:
         """
         response = self.generator.run(mutation_prompt=mutation_prompt)
         muts = response.output_parsed.mutations
-        self.token_usage.input_tokens += response.usage.input_tokens
-        self.token_usage.output_tokens += response.usage.output_tokens
-        self.token_usage.total_tokens += response.usage.total_tokens
 
         return [m.encode('utf-8') for m in muts]
 
@@ -177,9 +197,6 @@ class MutationSession:
         all_bad_mutations = all_bad_mutations - all_good_mutations
 
         response = self.summarizer.run(all_good_mutations, all_bad_mutations)
-        self.token_usage.input_tokens += response.usage.input_tokens
-        self.token_usage.output_tokens += response.usage.output_tokens
-        self.token_usage.total_tokens += response.usage.total_tokens
         self.generator.add_summary(response.output_text)
     
     def generate_critique(self, accepted_results: List["ExecutionResult"], rejected_results: List["ExecutionResult"]):
@@ -188,5 +205,8 @@ class MutationSession:
         self.generator.edit_goal_prompt(critic_message)
         print(f"Critic message: {critic_message}")
 
-    def get_token_usage(self) -> TokenUsage:
-        return self.token_usage
+    def get_token_usage(self) -> MultiAgentTokenUsage:
+        return MultiAgentTokenUsage(
+            generator_token_usage=self.generator.token_usage,
+            critic_token_usage=self.critic.token_usage
+        )

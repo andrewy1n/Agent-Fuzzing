@@ -43,7 +43,11 @@ class TokenUsage(BaseModel):
     input_tokens: int
     output_tokens: int
     total_tokens: int
-    
+
+class MultiAgentTokenUsage(BaseModel):
+    generator_token_usage: TokenUsage
+    critic_token_usage: TokenUsage
+
 class FuzzerResult(BaseModel):
     total_executions: int
     inital_seed_count: int
@@ -55,7 +59,6 @@ class FuzzerResult(BaseModel):
     average_execution_time_seconds: float
     crash_rate: float
     corpus_stat_result: CorpusStatResult
-    token_usage: TokenUsage
+    token_usage: TokenUsage | MultiAgentTokenUsage
 
 ExecutionStateSet = set[tuple]
-

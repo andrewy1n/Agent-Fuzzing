@@ -185,12 +185,10 @@ class AgentFuzzer:
         # Print token usage
         token_usage = fuzzer_result.token_usage
         print("\n=== Token Usage ===")
-        if token_usage.total_tokens > 0:
-            print(f"Total input tokens: {token_usage.input_tokens}")
-            print(f"Total output tokens: {token_usage.output_tokens}")
-            print(f"Total tokens: {token_usage.total_tokens}")
-        else:
-            print("Token usage information not available from OpenAI API")
+        print(f"Generator token usage: {token_usage.generator_token_usage.total_tokens}")
+        print(f"Critic token usage: {token_usage.critic_token_usage.total_tokens}")
+
+        print ("\n=== Mutations ===")
         print(f"Total mutations generated: {fuzzer_result.total_mutations}")
         print(f"Unique mutations generated: {fuzzer_result.unique_mutations}")
         

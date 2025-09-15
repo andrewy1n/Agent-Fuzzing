@@ -14,7 +14,7 @@ input_data = codecs.decode(args.input, 'unicode_escape').encode('utf-8')
 run_config = yaml.safe_load(open("config.yaml"))
 
 try:
-    result = execute_with_qiling(input_data, run_config)
+    result = execute_with_qiling(input_data, run_config, force_stdout=True)
     if args.result_attr:
         print(f"{args.result_attr}: {getattr(result, args.result_attr)}")
     else:

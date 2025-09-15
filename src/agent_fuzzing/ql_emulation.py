@@ -87,7 +87,7 @@ def _compute_image_range(image) -> tuple[int, int]:
         sys.stderr.write("[error] unsupported ELF class for range computation\n")
         sys.stderr.flush()
 
-def execute_with_qiling(input_data: bytes, run_config: dict) -> ExecutionResult:
+def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool = False) -> ExecutionResult:
     start_time = time.time()
     crash_info = None
     ql = None
@@ -99,6 +99,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict) -> ExecutionResult:
     STATE_ADDRESS_OFFSET = run_config['fuzzer']['state_address_offset']
     STATE_REG = run_config['fuzzer']['state_reg']
     PER_RUN_TIMEOUT = run_config['fuzzer'].get('per_run_timeout', 0)
+    STDOUT = run_config['fuzzer'].get('stdout', False) or force_stdout
     MAP_SIZE = 1 << 16
 
     cov_bitmap = bytearray(MAP_SIZE)
@@ -122,7 +123,8 @@ def execute_with_qiling(input_data: bytes, run_config: dict) -> ExecutionResult:
         input_data = input_data.decode('utf-8', errors='replace').encode('utf-8')
 
     try:
-        print(f"Executing with input: {input_data.decode(errors='replace')}")
+        if STDOUT:
+            print(f"Executing with input: {input_data.decode(errors='replace')}")
         ql = Qiling([BINARY_PATH], ROOTFS_PATH, console=False)
 
         img = None
@@ -230,11 +232,12 @@ def execute_with_qiling(input_data: bytes, run_config: dict) -> ExecutionResult:
                     stdout_buffer.extend(data)
                 except Exception:
                     pass
-                try:
-                    sys.stdout.buffer.write(data)
-                except Exception:
-                    sys.stdout.write(data.decode(errors='ignore'))
-                sys.stdout.flush()
+                if STDOUT:
+                    try:
+                        sys.stdout.buffer.write(data)
+                    except Exception:
+                        sys.stdout.write(data.decode(errors='ignore'))
+                    sys.stdout.flush()
             elif fd == 2:
                 try:
                     sys.stderr.buffer.write(data)

@@ -7,7 +7,7 @@ _meta:
     - generator_agent.goal_prompt
 
 fuzzer:
-  time_limit: 20
+  time_limit: 30
   execution_limit: 0
   per_run_timeout: 5
   mutations_per_seed: 4
@@ -15,6 +15,9 @@ fuzzer:
   state_address_offset: 0
   state_reg: []
   seed_inputs: ['a']
+
+corpus_stat_tracker:
+  snapshot_interval_seconds: 10
 
 target:
   binary: 'samples/CROMU_00005'
@@ -27,7 +30,7 @@ output:
   dir: 'out'
 
 generator_agent:
-  model: 'gpt-4.1-mini'
+  model: 'gpt-5-nano'
   system_prompt: |
     You are a mutation agent for a agent-driven fuzzer.
     Your job: given a seed input and feedback (good/bad examples), produce a diverse list of input mutations that are more like the good examples and less like the bad ones, with the goal of increasing execution state coverage.

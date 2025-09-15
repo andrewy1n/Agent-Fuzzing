@@ -30,7 +30,7 @@ class AgentFuzzer:
         self.run_config = yaml.safe_load(open('config.yaml'))
         self.state_set: ExecutionStateSet = set()
         self.seed_queue = SeedQueue()
-        self.corpus_stat_tracker = CorpusStatTracker(MAP_SIZE=(1 << 16))
+        self.corpus_stat_tracker = CorpusStatTracker(MAP_SIZE=(1 << 16), config=self.run_config['corpus_stat_tracker'])
         output_cfg = self.run_config['output']
 
         output_root = output_cfg['dir']
@@ -73,6 +73,8 @@ class AgentFuzzer:
             execution_time += result.execution_time
             self.corpus_stat_tracker.add_sample(result)
             initial_seed_count += 1
+
+        self.corpus_stat_tracker.start_tracking()
 
         def _under_time_limit() -> bool:
             time_limit = self.run_config['fuzzer']['time_limit']
@@ -145,6 +147,9 @@ class AgentFuzzer:
             # self.session.generate_summary(all_accepted_results, all_rejected_results)   
             self.session.generate_critique(round_accepted_results, round_rejected_results)
         
+        self.corpus_stat_tracker.stop()
+        self.corpus_stat_tracker.force_snapshot()
+        
         fuzzer_result = FuzzerResult(
             total_executions=execution_count,
             inital_seed_count=initial_seed_count,
@@ -157,6 +162,7 @@ class AgentFuzzer:
             crash_rate=((len(crashes) / execution_count) if execution_count > 0 else 0),
             corpus_stat_result=self.corpus_stat_tracker.get_result(),
             token_usage=self.session.get_token_usage(),
+            coverage_over_time=self.corpus_stat_tracker.get_coverage_snapshots(),
         )
 
         self.print_summary(fuzzer_result, crashes)
@@ -164,6 +170,7 @@ class AgentFuzzer:
         self.save_results(corpus_results)
         self.save_crashes(crashes)
         self.save_mutations()
+        self.save_coverage_over_time(fuzzer_result.coverage_over_time)
     
     def print_summary(self, fuzzer_result: FuzzerResult, crashes: List[CrashResult]):
         print("\n=== Fuzzing Summary ===")
@@ -249,3 +256,10 @@ class AgentFuzzer:
         with open(path, 'w') as f:
             json.dump(mutations_data, f, indent=2)
         print(f"Saved {len(self.all_mutations)} mutations to {path}")
+
+    def save_coverage_over_time(self, coverage_snapshots: List):
+        path = self.output_dir / 'coverage_over_time.json'
+        serializable = [snapshot.model_dump() for snapshot in coverage_snapshots]
+        with open(path, 'w') as f:
+            json.dump(serializable, f, indent=2)
+        print(f"Saved {len(coverage_snapshots)} coverage snapshots to {path}")

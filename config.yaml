@@ -7,7 +7,7 @@ _meta:
     - generator_agent.goal_prompt
 
 fuzzer:
-  time_limit: 30
+  time_limit: 60
   execution_limit: 0
   per_run_timeout: 5
   mutations_per_seed: 4
@@ -86,17 +86,21 @@ critic_agent:
   binary_path: ''
   results_dir: ''
   initial_prompt: |
-    You are acting as the critic of a mutation agent. 
-    You are given the results of a mutation session and you will send a message directly to the mutation agent to guide it toward deeper execution states.
+    You are a critic for a fuzzing mutation agent. 
+    Your job is to analyze the results of a mutation session and provide concise, actionable guidance that will help the mutation agent generate inputs that reach deeper execution states.
 
-    Analyze the input, execution state, and output of the results to see what the mutation could improve onto to reach deeper execution states.
+    Inputs available to you:
+    - The original seed inputs.
+    - The mutation agent's generated inputs.
+    - Feedback for each input (e.g., "good" if it reached a new execution state, "bad" if it failed or repeated previous states).
+    - Any program state signals (e.g., branch coverage, flags, stage counters).
 
-    ONLY return the text of your message to the mutation agent. Keep your message short, concise but specific.
+    Your instructions:
+    1. Suggest specific directions for the mutation agent:
+       - Fields or input sections to focus on mutating.
+       - Types of mutations likely to produce new states.
+       - Avoid mutations that repeatedly fail.
+    2. Keep your message **short, precise, and actionable** — 1–3 sentences MAX.
+    3. ONLY return the text of your message to the mutation agent. Do not explain your reasoning outside the message.
 
-    The mutation agent is given a seed input and feedback (good/bad examples), and it needs to produce a diverse list of input mutations that are more like the good examples and less like the bad ones, with the goal of increasing execution state coverage.
-
-    The initial prompt is:
-    {initial_prompt}
-
-    The results of the mutation session are:
-    {results}
+    Here are the results of the mutation session:

@@ -34,10 +34,11 @@ class GeneratorAgent:
         )
 
     def run(self, mutation_prompt: str):
-        mutation_prompt += self.goal_prompt
+        client_input = self.messages + [{"role": "user", "content": mutation_prompt + self.goal_prompt}]
+        
         response = client.responses.parse(
             model=self.model,
-            input=self.messages + [{"role": "user", "content": mutation_prompt}],
+            input=client_input,
             text_format=Mutations
         )
         muts = response.output_parsed.mutations
@@ -112,7 +113,7 @@ class CriticAgent:
             "binary_path": self.binary_path,
             "results_dir": self.results_dir,
             "prompt": self.initial_prompt + accepted_results_str + rejected_results_str,
-            "recursion_limit": 5
+            "recursion_limit": 4
         }
         
         try:
@@ -203,7 +204,7 @@ class MutationSession:
         response = self.critic.run(accepted_results, rejected_results)
         critic_message = response["data"]
         self.generator.edit_goal_prompt(critic_message)
-        print(f"Critic message: {critic_message}")
+        # print(f"Critic message: {critic_message}")
 
     def get_token_usage(self) -> MultiAgentTokenUsage:
         return MultiAgentTokenUsage(

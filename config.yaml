@@ -1,8 +1,7 @@
 _meta:
   editable_keys:
-    - fuzzer.state_address_offset
-    - fuzzer.state_reg
     - fuzzer.seed_inputs
+    - fuzzer.execution_state
     - generator_agent.grammar_prompt
     - generator_agent.goal_prompt
 
@@ -12,8 +11,10 @@ fuzzer:
   per_run_timeout: 5
   mutations_per_seed: 4
   round_length: 10
-  state_address_offset: 0
-  state_reg: []
+  execution_state: 
+  - name: ''
+    address_offset: 0
+    regs: []
   seed_inputs: ['a']
   stdout: false
 
@@ -21,7 +22,7 @@ corpus_stat_tracker:
   snapshot_interval_seconds: 10
 
 target:
-  binary: 'samples/CROMU_00005'
+  binary: 'samples/maze'
   rootfs: 'rootfs/x8664_linux_glibc2.39'
 
 input:

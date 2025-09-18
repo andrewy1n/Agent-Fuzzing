@@ -96,11 +96,10 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
 
     BINARY_PATH = run_config['target']['binary']
     ROOTFS_PATH = run_config['target']['rootfs']
-    STATE_ADDRESS_OFFSET = run_config['fuzzer']['state_address_offset']
-    STATE_REG = run_config['fuzzer']['state_reg']
     PER_RUN_TIMEOUT = run_config['fuzzer'].get('per_run_timeout', 0)
     STDOUT = run_config['fuzzer'].get('stdout', False) or force_stdout
     MAP_SIZE = 1 << 16
+    EXECUTION_STATE_DICT = run_config['fuzzer']['execution_state']
 
     cov_bitmap = bytearray(MAP_SIZE)
     prev_loc = [0]
@@ -147,15 +146,17 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         ql.add_fs_mapper('/dev/urandom', '/dev/urandom')
         ql.add_fs_mapper('/dev/random', '/dev/urandom')
 
-        target_state_addr = img.base + STATE_ADDRESS_OFFSET
-
-        def capture_registers_at_state(ql: Qiling, address: int, size: int):
-            for reg in STATE_REG:
-                reg_value = getattr(ql.arch.regs, reg)
-                mutable_state.append(reg_value)
-            return
-        
-        ql.hook_code(capture_registers_at_state, begin=target_state_addr, end=target_state_addr + 1)
+        for state_item in EXECUTION_STATE_DICT:
+            name = state_item['name']
+            offset = state_item['address_offset']
+            regs = state_item['regs']
+            def capture_state_at_address(ql: Qiling, address: int, size: int):
+                mutable_state.append(name)
+                for reg in regs:
+                    reg_value = getattr(ql.arch.regs, reg)
+                    mutable_state.append(reg_value)
+                return
+            ql.hook_code(capture_state_at_address, begin=img.base + offset, end=img.base + offset + 1)
 
         def block_cov_cb(ql, address, size):
             cur = ((address >> 4) ^ (address << 8)) & 0xFFFFFFFF

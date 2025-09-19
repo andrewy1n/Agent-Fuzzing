@@ -1,9 +1,43 @@
 _meta:
   editable_keys:
-    - fuzzer.seed_inputs
-    - fuzzer.execution_state
-    - generator_agent.grammar_prompt
-    - generator_agent.goal_prompt
+    - path: fuzzer.seed_inputs
+      type: list
+    - path: fuzzer.execution_state
+      type: list
+      description: |
+        List of execution state definitions. Each state can include:
+        - name: semantic name of the state
+        - read: read spec dictionary
+            # for register-direct mode
+            mode: register_direct
+            capture_pc_offset: <hex_offset> # PC offset from image base where snapshot occurs (required for register modes)
+            reg: <register_name>            # Register name (e.g., al, rax)
+            size: <int>                     # Bytes to read
+
+            # for mem_offset mode
+            mode: mem_offset
+            capture_pc_offset: <hex_offset> # PC offset from image base where snapshot occurs
+            offset_from_image: <hex_offset> # Offset from image base to read
+            size: <int>          # Bytes to read
+
+            # for register_deref mode
+            mode: register_deref
+            capture_pc_offset: <hex_offset> # PC offset where pointer is loaded into register
+            reg: <register_name>            # Register containing pointer
+            ptr_size: <int>                  # Size of the pointer (bytes)
+            size: <int>                      # Number of bytes to read at dereferenced address
+        - valid_values:                      # Optional constraints to guide generator
+            type: <enum|bytes|int|float>
+            values: [<list_of_values>]       # for enums
+            alphabet: [<allowed_bytes>]      # for bytes
+            length: <int>                     # for bytes arrays
+            signed: <true|false>             # for integers
+            range: [<min>, <max>]            # for int/float ranges
+        - notes: human-readable explanation
+    - path: generator_agent.grammar_prompt
+      type: string
+    - path: generator_agent.goal_prompt
+      type: string
 
 fuzzer:
   time_limit: 60
@@ -11,18 +45,40 @@ fuzzer:
   per_run_timeout: 5
   mutations_per_seed: 4
   round_length: 10
-  execution_state: 
-  - name: ''
-    address_offset: 0
-    regs: []
-  seed_inputs: ['a']
+  seed_inputs: ['1 1 1 2\n', '9\n', '7 1 7 3\n9\n']
   stdout: false
+  execution_state:
+    # Example 1: mem_offset - Capture current player from global variable (always accessible)
+    - name: current_player_turn
+      read:
+        mode: mem_offset
+        capture_pc_offset: 0x3244    # Right after initboard call - this will definitely execute
+        offset_from_image: 0x6000    # Global current_team variable
+        size: 1                      # 1 byte for player ID (0=white, 1=black)
+      valid_values:
+        type: enum
+        values: [0, 1]               # 0=white, 1=black
+      notes: "Captures current player turn from global variable"
+    
+    # Example 2: Final board capture - After all pieces are set
+    - name: full_board_correct
+      read:
+        mode: register_deref
+        capture_pc_offset: 0x2491    # Right after last piece is set, before function epilogue
+        reg: rax                     # RAX contains ptr_array address + 0x3f
+        ptr_size: 8                  # 64-bit pointer  
+        size: 64                     # Read entire 8x8 board (64 bytes) 
+      valid_values:
+        type: bytes
+        alphabet: [0x2e, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c]  # Chess pieces: '.', 'a'-'l'  
+        length: 64                   # Exactly 64 bytes (8x8 board)
+      notes: "Captures complete board after all pieces are initialized"
 
 corpus_stat_tracker:
   snapshot_interval_seconds: 10
 
 target:
-  binary: 'samples/maze'
+  binary: 'samples/CROMU_00005'
   rootfs: 'rootfs/x8664_linux_glibc2.39'
 
 input:

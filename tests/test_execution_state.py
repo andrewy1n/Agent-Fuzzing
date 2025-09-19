@@ -20,17 +20,18 @@ try:
     state_names = []
     for state_item in run_config['fuzzer']['execution_state']:
         state_names.append(state_item['name'])
-
-    print("\nExecution states that are NOT firing:")
     
-    execution_state_index = 0
+    # Count occurrences of each state name in execution_state
+    state_counts = {}
+    for i in range(0, len(execution_state), 2):  # Names are at even indices
+        if i < len(execution_state):
+            state_name = execution_state[i]
+            state_counts[state_name] = state_counts.get(state_name, 0) + 1
+    
     for state_item in run_config['fuzzer']['execution_state']:
         state_name = state_item['name']
-        expected_regs = state_item['regs']
-
-        if execution_state_index < len(execution_state) and execution_state[execution_state_index] == state_name:
-            execution_state_index += 1 + len(expected_regs)
-            print(f"{state_name} - FIRED (has values)")
+        if state_name in state_counts and state_counts[state_name] > 0:
+            print(f"{state_name} - FIRED ({state_counts[state_name]} times)")
         else:
             print(f"{state_name} - NOT FIRING (no values)")
     

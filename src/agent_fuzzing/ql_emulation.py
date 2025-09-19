@@ -3,7 +3,7 @@ from .models import ExecutionResult, ExecutionOutcome
 from qiling import Qiling
 from qiling.const import QL_INTERCEPT
 from qiling.extensions import pipe
-from typing import List
+from typing import List, Union
 import threading
 import sys
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_MODE_64
@@ -28,7 +28,6 @@ class _InputFD:
 
 def _compute_image_range(image) -> tuple[int, int]:
     base = int(getattr(image, 'base', 0))
-    # Parse ELF on disk to determine PT_LOAD span, then relocate by runtime base
     img_path = getattr(image, 'path', None)
     if not img_path:
         return base, base
@@ -86,6 +85,91 @@ def _compute_image_range(image) -> tuple[int, int]:
     else:
         sys.stderr.write("[error] unsupported ELF class for range computation\n")
         sys.stderr.flush()
+
+def _validate_execution_state_value(value: Union[bytes, int], valid_values_config: dict) -> Union[bytes, int]:
+    if not valid_values_config:
+        return value
+        
+    val_type = valid_values_config.get('type')
+    
+    try:
+        if val_type == 'enum':
+            if isinstance(value, (bytes, bytearray)):
+                int_val = int.from_bytes(value, byteorder='little')
+            else:
+                int_val = value
+            
+            allowed_values = valid_values_config.get('values', [])
+            if int_val in allowed_values:
+                return int_val
+            else:
+                raise ValueError(f"Invalid enum value: {int_val} not in allowed values {allowed_values}")
+                
+        elif val_type == 'int':
+            if isinstance(value, (bytes, bytearray)):
+                int_val = int.from_bytes(value, byteorder='little', signed=valid_values_config.get('signed', False))
+            else:
+                int_val = value
+                
+            val_range = valid_values_config.get('range', [])
+            if len(val_range) == 2:
+                min_val, max_val = val_range
+                if min_val <= int_val <= max_val:
+                    return int_val
+                else:
+                    raise ValueError(f"Integer value {int_val} out of range [{min_val}, {max_val}]")
+            return int_val
+            
+        elif val_type == 'bytes':
+            if not isinstance(value, (bytes, bytearray)):
+                if isinstance(value, int):
+                    value = value.to_bytes(4, byteorder='little')
+                else:
+                    raise ValueError(f"Cannot convert {type(value)} to bytes")
+            
+            if isinstance(value, bytearray):
+                value = bytes(value)
+                
+            expected_length = valid_values_config.get('length')
+            if expected_length is not None and len(value) != expected_length:
+                raise ValueError(f"Bytes length {len(value)} does not match expected length {expected_length}")
+                    
+            alphabet = valid_values_config.get('alphabet', [])
+            if alphabet:
+                for i, byte_val in enumerate(value):
+                    if byte_val not in alphabet:
+                        raise ValueError(f"Invalid byte 0x{byte_val:02x} at position {i}, not in allowed alphabet")
+                
+            return value
+            
+        elif val_type == 'float':
+            if isinstance(value, bytes):
+                if len(value) == 4:
+                    import struct
+                    float_val = struct.unpack('<f', value)[0]
+                elif len(value) == 8:
+                    import struct
+                    float_val = struct.unpack('<d', value)[0]
+                else:
+                    raise ValueError(f"Invalid byte length {len(value)} for float (expected 4 or 8)")
+            else:
+                float_val = float(value)
+                
+            val_range = valid_values_config.get('range', [])
+            if len(val_range) == 2:
+                min_val, max_val = val_range
+                if min_val <= float_val <= max_val:
+                    return value if isinstance(value, bytes) else float_val
+                else:
+                    raise ValueError(f"Float value {float_val} out of range [{min_val}, {max_val}]")
+            return value if isinstance(value, bytes) else float_val
+            
+    except Exception as e:
+        sys.stderr.write(f"[warning] validation failed for value {value}: {e}\n")
+        sys.stderr.flush()
+        return value
+        
+    return value
 
 def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool = False) -> ExecutionResult:
     start_time = time.time()
@@ -148,15 +232,55 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
 
         for state_item in EXECUTION_STATE_DICT:
             name = state_item['name']
-            offset = state_item['address_offset']
-            regs = state_item['regs']
-            def capture_state_at_address(ql: Qiling, address: int, size: int):
-                mutable_state.append(name)
-                for reg in regs:
-                    reg_value = getattr(ql.arch.regs, reg)
-                    mutable_state.append(reg_value)
-                return
-            ql.hook_code(capture_state_at_address, begin=img.base + offset, end=img.base + offset + 1)
+            mode = state_item['read']['mode']
+            valid_values_config = state_item.get('valid_values', {})
+            
+            if mode == 'register_direct':
+                capture_pc_offset = state_item['read']['capture_pc_offset']
+                reg = state_item['read']['reg']
+                size = state_item['read']['size']
+                def make_capture_function(state_name, register, capture_size, validation_config):
+                    def capture_state_at_address(ql: Qiling, address: int, size_param: int):
+                        mutable_state.append(state_name)
+                        reg_value = getattr(ql.arch.regs, register)
+                        reg_bytes = reg_value.to_bytes(8, byteorder='little')[:capture_size]
+                        
+                        validated_value = _validate_execution_state_value(reg_bytes, validation_config)
+                        mutable_state.append(validated_value)
+                        return
+                    return capture_state_at_address
+                hook_func = make_capture_function(name, reg, size, valid_values_config)
+                ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
+            elif mode == 'register_deref':
+                capture_pc_offset = state_item['read']['capture_pc_offset']
+                reg = state_item['read']['reg']
+                ptr_size = state_item['read']['ptr_size']
+                size = state_item['read']['size']
+                def make_deref_capture_function(state_name, register, capture_size, validation_config):
+                    def capture_state_at_address(ql: Qiling, address: int, size_param: int):
+                        mutable_state.append(state_name)
+                        reg_value = getattr(ql.arch.regs, register)
+                        data = ql.mem.read(reg_value, capture_size)
+                        validated_value = _validate_execution_state_value(data, validation_config)
+                        mutable_state.append(validated_value)
+                        return
+                    return capture_state_at_address
+                hook_func = make_deref_capture_function(name, reg, size, valid_values_config)
+                ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
+            elif mode == 'mem_offset':
+                capture_pc_offset = state_item['read']['capture_pc_offset']
+                offset_from_image = state_item['read']['offset_from_image']
+                size = state_item['read']['size']
+                def make_mem_capture_function(state_name, offset, capture_size, validation_config):
+                    def capture_state_at_address(ql: Qiling, address: int, size_param: int):
+                        mutable_state.append(state_name)
+                        data = ql.mem.read(img.base + offset, capture_size)
+                        validated_value = _validate_execution_state_value(data, validation_config)
+                        mutable_state.append(validated_value)
+                        return
+                    return capture_state_at_address
+                hook_func = make_mem_capture_function(name, offset_from_image, size, valid_values_config)
+                ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
 
         def block_cov_cb(ql, address, size):
             cur = ((address >> 4) ^ (address << 8)) & 0xFFFFFFFF

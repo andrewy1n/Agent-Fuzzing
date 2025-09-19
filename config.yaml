@@ -45,34 +45,9 @@ fuzzer:
   per_run_timeout: 5
   mutations_per_seed: 4
   round_length: 10
-  seed_inputs: ['1 1 1 2\n', '9\n', '7 1 7 3\n9\n']
+  seed_inputs: []
   stdout: false
   execution_state:
-    # Example 1: mem_offset - Capture current player from global variable (always accessible)
-    - name: current_player_turn
-      read:
-        mode: mem_offset
-        capture_pc_offset: 0x3244    # Right after initboard call - this will definitely execute
-        offset_from_image: 0x6000    # Global current_team variable
-        size: 1                      # 1 byte for player ID (0=white, 1=black)
-      valid_values:
-        type: enum
-        values: [0, 1]               # 0=white, 1=black
-      notes: "Captures current player turn from global variable"
-    
-    # Example 2: Final board capture - After all pieces are set
-    - name: full_board_correct
-      read:
-        mode: register_deref
-        capture_pc_offset: 0x2491    # Right after last piece is set, before function epilogue
-        reg: rax                     # RAX contains ptr_array address + 0x3f
-        ptr_size: 8                  # 64-bit pointer  
-        size: 64                     # Read entire 8x8 board (64 bytes) 
-      valid_values:
-        type: bytes
-        alphabet: [0x2e, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c]  # Chess pieces: '.', 'a'-'l'  
-        length: 64                   # Exactly 64 bytes (8x8 board)
-      notes: "Captures complete board after all pieces are initialized"
 
 corpus_stat_tracker:
   snapshot_interval_seconds: 10

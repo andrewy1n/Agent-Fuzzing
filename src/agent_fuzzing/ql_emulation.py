@@ -167,9 +167,9 @@ def _validate_execution_state_value(value: Union[bytes, int], valid_values_confi
     except Exception as e:
         sys.stderr.write(f"[warning] validation failed for value {value}: {e}\n")
         sys.stderr.flush()
-        return value
+        return None
         
-    return value
+    return None
 
 def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool = False) -> ExecutionResult:
     start_time = time.time()
@@ -241,13 +241,14 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                 size = state_item['read']['size']
                 def make_capture_function(state_name, register, capture_size, validation_config):
                     def capture_state_at_address(ql: Qiling, address: int, size_param: int):
-                        mutable_state.append(state_name)
                         reg_value = getattr(ql.arch.regs, register)
                         reg_bytes = reg_value.to_bytes(8, byteorder='little')[:capture_size]
                         
                         validated_value = _validate_execution_state_value(reg_bytes, validation_config)
+                        if validated_value is None:
+                            return
+                        mutable_state.append(state_name)
                         mutable_state.append(validated_value)
-                        return
                     return capture_state_at_address
                 hook_func = make_capture_function(name, reg, size, valid_values_config)
                 ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
@@ -258,10 +259,12 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                 size = state_item['read']['size']
                 def make_deref_capture_function(state_name, register, capture_size, validation_config):
                     def capture_state_at_address(ql: Qiling, address: int, size_param: int):
-                        mutable_state.append(state_name)
                         reg_value = getattr(ql.arch.regs, register)
                         data = ql.mem.read(reg_value, capture_size)
                         validated_value = _validate_execution_state_value(data, validation_config)
+                        if validated_value is None:
+                            return
+                        mutable_state.append(state_name)
                         mutable_state.append(validated_value)
                         return
                     return capture_state_at_address
@@ -273,9 +276,11 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                 size = state_item['read']['size']
                 def make_mem_capture_function(state_name, offset, capture_size, validation_config):
                     def capture_state_at_address(ql: Qiling, address: int, size_param: int):
-                        mutable_state.append(state_name)
                         data = ql.mem.read(img.base + offset, capture_size)
                         validated_value = _validate_execution_state_value(data, validation_config)
+                        if validated_value is None:
+                            return
+                        mutable_state.append(state_name)
                         mutable_state.append(validated_value)
                         return
                     return capture_state_at_address

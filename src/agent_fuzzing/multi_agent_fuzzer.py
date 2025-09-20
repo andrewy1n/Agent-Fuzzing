@@ -216,6 +216,25 @@ class AgentFuzzer:
                 json.dump(serializable, f, indent=2)
             print(f"\nSaved {len(crashes)} crashes to {path}")
 
+    def _serialize_execution_state(self, execution_state: tuple) -> list:
+        result = []
+        for item in execution_state:
+            if isinstance(item, bytes):
+                import base64
+                result.append({
+                    '_type': 'bytes',
+                    '_data': base64.b64encode(item).decode('ascii')
+                })
+            elif isinstance(item, bytearray):
+                import base64
+                result.append({
+                    '_type': 'bytearray', 
+                    '_data': base64.b64encode(bytes(item)).decode('ascii')
+                })
+            else:
+                result.append(item)
+        return result
+
     def save_results(self, results: List[ExecutionResult]):
         path = self.output_dir / 'corpus_results.json'
 
@@ -225,7 +244,7 @@ class AgentFuzzer:
                 'execution_outcome': r.execution_outcome.value,
                 'execution_time': r.execution_time,
                 'crash_info': r.crash_info,
-                'execution_state': r.execution_state,
+                'execution_state': self._serialize_execution_state(r.execution_state),
                 'stdout': r.stdout,
                 'total_edges': sum(1 for b in r.cov_bitmap if b),
                 'total_branch_sites': sum(1 for bt, bf in zip(r.branch_taken_bitmap, r.branch_fallthrough_bitmap) if bt or bf),

@@ -7,6 +7,7 @@ from typing import List, Union
 import threading
 import sys
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_MODE_64
+import re
 
 class _InputFD:
     def __init__(self, data: bytes):
@@ -171,11 +172,35 @@ def _validate_execution_state_value(value: Union[bytes, int], valid_values_confi
         
     return None
 
-def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool = False) -> ExecutionResult:
+def _coerce_value_to_int(value: Union[bytes, bytearray, int]) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        return int.from_bytes(value, byteorder='little', signed=False)
+
+def _eval_predicate_expression(expr: str, env: dict) -> bool:
+    expr = (expr or '').replace('&&', ' and ').replace('||', ' or ')
+    def _replace_name(match: re.Match) -> str:
+        name = match.group(0)
+        if name in ("and", "or", "not", "True", "False"):
+            return name
+        if name in env:
+            try:
+                return str(_coerce_value_to_int(env[name]))
+            except Exception:
+                return "0"
+        return "0"
+    substituted = re.sub(r"[A-Za-z_][A-Za-z0-9_]*", _replace_name, expr)
+    try:
+        return bool(eval(substituted, {"__builtins__": {}}, {}))
+    except Exception:
+        return False
+
+def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool = False, show_execution_values: bool = False) -> ExecutionResult:
     start_time = time.time()
     crash_info = None
     ql = None
-    mutable_state = []
+    execution_value_samples: dict = {}
     execution_outcome = ExecutionOutcome.NORMAL
 
     BINARY_PATH = run_config['target']['binary']
@@ -183,7 +208,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
     PER_RUN_TIMEOUT = run_config['fuzzer'].get('per_run_timeout', 0)
     STDOUT = run_config['fuzzer'].get('stdout', False) or force_stdout
     MAP_SIZE = 1 << 16
-    EXECUTION_STATE_DICT = run_config['fuzzer']['execution_state']
+    EXECUTION_VALUES_DICT = run_config['fuzzer']['execution_values']
 
     cov_bitmap = bytearray(MAP_SIZE)
     prev_loc = [0]
@@ -230,7 +255,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         ql.add_fs_mapper('/dev/urandom', '/dev/urandom')
         ql.add_fs_mapper('/dev/random', '/dev/urandom')
 
-        for state_item in EXECUTION_STATE_DICT:
+        for state_item in EXECUTION_VALUES_DICT:
             name = state_item['name']
             mode = state_item['read']['mode']
             valid_values_config = state_item.get('valid_values', {})
@@ -247,8 +272,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                         validated_value = _validate_execution_state_value(reg_bytes, validation_config)
                         if validated_value is None:
                             return
-                        mutable_state.append(state_name)
-                        mutable_state.append(validated_value)
+                        execution_value_samples.setdefault(state_name, []).append(validated_value)
                     return capture_state_at_address
                 hook_func = make_capture_function(name, reg, size, valid_values_config)
                 ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
@@ -264,8 +288,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                         validated_value = _validate_execution_state_value(data, validation_config)
                         if validated_value is None:
                             return
-                        mutable_state.append(state_name)
-                        mutable_state.append(validated_value)
+                        execution_value_samples.setdefault(state_name, []).append(validated_value)
                         return
                     return capture_state_at_address
                 hook_func = make_deref_capture_function(name, reg, size, valid_values_config)
@@ -280,8 +303,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                         validated_value = _validate_execution_state_value(data, validation_config)
                         if validated_value is None:
                             return
-                        mutable_state.append(state_name)
-                        mutable_state.append(validated_value)
+                        execution_value_samples.setdefault(state_name, []).append(validated_value)
                         return
                     return capture_state_at_address
                 hook_func = make_mem_capture_function(name, offset_from_image, size, valid_values_config)
@@ -442,12 +464,89 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         if 'call_depth' not in locals():
             call_depth = 0
     
+    if show_execution_values:
+        for name, values in execution_value_samples.items():
+            print(f"{name}: {values}")
+    
+    state_spec = run_config['fuzzer']['execution_state']
+
+    latest_values = {k: v_list[-1] for k, v_list in execution_value_samples.items() if v_list}
+
+    computed_state = []
+    for item in state_spec:
+        item_type = item['type']
+        if item_type == 'value':
+            name = item['name']
+            if name in latest_values:
+                computed_state.append(f"{name} (value)")
+                computed_state.append(latest_values[name])
+        elif item_type == 'sum':
+            name = item['name']
+            values = execution_value_samples.get(name, [])
+            total = 0
+            for v in values:
+                total += _coerce_value_to_int(v)
+            computed_state.append(f"{name} (sum)")
+            computed_state.append(total)
+        elif item_type == 'predicate':
+            expr = item['expr']
+            fired = _eval_predicate_expression(expr, latest_values)
+            if show_execution_values:
+                try:
+                    print(f"PRED env: {latest_values}")
+                    print(f"PRED expr: {expr} -> {fired}")
+                except Exception:
+                    pass
+            computed_state.append(expr)
+            computed_state.append(1 if fired else 0)
+        elif item_type == 'counter':
+            expr = item['expr']
+            count = 0
+            max_length = max((len(values) for values in execution_value_samples.values()), default=0)
+            
+            for i in range(max_length):
+                step_values = {}
+                for name, values in execution_value_samples.items():
+                    if i < len(values):
+                        step_values[name] = values[i]
+                
+                if _eval_predicate_expression(expr, step_values):
+                    count += 1
+            
+            if show_execution_values:
+                try:
+                    print(f"COUNTER expr: {expr} -> {count} times")
+                except Exception:
+                    pass
+            computed_state.append(f"{expr} (count)")
+            computed_state.append(count)
+        elif item_type == 'set':
+            name = item['name']
+            values = execution_value_samples.get(name, [])
+
+            unique_values = set()
+            for v in values:
+                if isinstance(v, (bytes, bytearray)):
+                    unique_values.add(v)
+                elif isinstance(v, int):
+                    unique_values.add(v)
+                else:
+                    unique_values.add(str(v))
+            
+            if show_execution_values:
+                try:
+                    print(f"SET {name}: {sorted(unique_values)}")
+                except Exception:
+                    pass
+            computed_state.append(f"{name} (set)")
+            computed_state.append(sorted(unique_values))
+
     return ExecutionResult(
         input_data=input_data,
         execution_outcome=execution_outcome,
         execution_time=execution_time,
         crash_info=crash_info,
-        execution_state=tuple(mutable_state),
+        execution_state=tuple(computed_state),
         stdout=(stdout_buffer.decode(errors='replace') if 'stdout_buffer' in locals() else None),
         cov_bitmap=cov_bitmap,
         branch_taken_bitmap=branch_taken,

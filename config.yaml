@@ -2,7 +2,7 @@ _meta:
   editable_keys:
     - path: fuzzer.seed_inputs
       type: list
-    - path: fuzzer.execution_state
+    - path: fuzzer.execution_values
       type: list
       description: |
         List of execution state definitions. Each state can include:
@@ -34,6 +34,25 @@ _meta:
             signed: <true|false>             # for integers
             range: [<min>, <max>]            # for int/float ranges
         - notes: human-readable explanation
+    - path: fuzzer.execution_state
+      type: list
+      description: |
+        List of execution state definitions, they are either values, predicates, or sum.
+        Each definition takes up a value in the execution state tuple.
+        - type: predicate # boolean expression using <execution_value_name> and real values, operators: ==, !=, <, >, <=, >=, &&, ||
+        - expr: # boolean expression using <execution_value_name> and real values, operators: ==, !=, <, >, <=, >=, &&, ||
+
+        - type: value # last value of the given execution value name
+        - name: <execution_value_name>
+
+        - type: sum # sum of all values seen for the given execution value name
+        - name: <execution_value_name>
+
+        - type: counter # count of how many times the boolean expression is true
+        - expr: # boolean expression using <execution_value_name> and real values, operators: ==, !=, <, >, <=, >=, &&, ||
+
+        - type: set # set of all values seen for the given execution value name
+        - name: <execution_value_name>
     - path: generator_agent.grammar_prompt
       type: string
     - path: generator_agent.goal_prompt
@@ -47,6 +66,7 @@ fuzzer:
   round_length: 10
   seed_inputs: []
   stdout: false
+  execution_values:
   execution_state:
 
 corpus_stat_tracker:

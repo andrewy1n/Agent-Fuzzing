@@ -206,19 +206,37 @@ class AgentFuzzer:
             print(f"\nSaved {len(crashes)} crashes to {path}")
 
     def _serialize_execution_state(self, execution_state: tuple) -> list:
+        def _serialize_bytes(data):
+            if isinstance(data, bytearray):
+                data = bytes(data)
+            try:
+                decoded = data.decode('ascii')
+                if decoded.isprintable():
+                    return decoded
+            except (UnicodeDecodeError, AttributeError):
+                pass
+            import base64
+            return {
+                '_type': 'bytes',
+                '_data': base64.b64encode(data).decode('ascii')
+            }
+        
         result = []
         for item in execution_state:
             if isinstance(item, bytes):
-                import base64
-                result.append({
-                    '_type': 'bytes',
-                    '_data': base64.b64encode(item).decode('ascii')
-                })
+                result.append(_serialize_bytes(item))
             elif isinstance(item, bytearray):
-                import base64
+                result.append(_serialize_bytes(item))
+            elif isinstance(item, tuple):
+                serialized_tuple = []
+                for sub_item in item:
+                    if isinstance(sub_item, (bytes, bytearray)):
+                        serialized_tuple.append(_serialize_bytes(sub_item))
+                    else:
+                        serialized_tuple.append(sub_item)
                 result.append({
-                    '_type': 'bytearray', 
-                    '_data': base64.b64encode(bytes(item)).decode('ascii')
+                    '_type': 'tuple',
+                    '_data': serialized_tuple
                 })
             else:
                 result.append(item)

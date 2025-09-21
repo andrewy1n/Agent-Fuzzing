@@ -535,11 +535,11 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
             
             if show_execution_values:
                 try:
-                    print(f"SET {name}: {sorted(unique_values)}")
+                    print(f"SET {name}: {tuple(sorted(unique_values))}")
                 except Exception:
                     pass
             computed_state.append(f"{name} (set)")
-            computed_state.append(sorted(unique_values))
+            computed_state.append(tuple(sorted(unique_values)))
 
     return ExecutionResult(
         input_data=input_data,

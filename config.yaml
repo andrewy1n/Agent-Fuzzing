@@ -59,11 +59,12 @@ _meta:
       type: string
 
 fuzzer:
-  time_limit: 30
+  time_limit: 10
   execution_limit: 0
   per_run_timeout: 5
-  mutations_per_seed: 4
-  round_length: 10
+  mutations:
+    num_mutations: 10
+    server: http://localhost:8001
   seed_inputs:
     - '0,1 0,2
 

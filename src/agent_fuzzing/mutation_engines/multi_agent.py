@@ -175,7 +175,7 @@ class MutationSession:
         self.generator = GeneratorAgent(config=config['generator_agent'])
         self.summarizer = SummarizerAgent(config=config['summarizer_agent'])
         self.critic = CriticAgent(config=config['critic_agent'])
-        self.mutations_per_seed = config['fuzzer']['mutations_per_seed']
+        self.mutations_per_seed = config['fuzzer']['mutations']['num_mutations']
 
     def propose_mutations(self, seed_input: bytes) -> list[bytes]:
         seed_input_str = seed_input.decode('utf-8', errors='replace')

@@ -7,10 +7,10 @@ import random
 from datetime import datetime
 import codecs
 
-from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult
+from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult, TokenUsage
 from .ql_emulation import execute_with_qiling
 from .corpus_stat_tracker import CorpusStatTracker
-from .mutation_engines.agent_defined.mutate import mutate
+from .mutation_engines.operators import Mutator
 
 class SeedQueue:
     def __init__(self):
@@ -42,6 +42,7 @@ class AgentFuzzer:
         self.all_mutations: List[str] = []
         fcfg = self.run_config['fuzzer']
         self.seed_inputs = fcfg['seed_inputs']
+        self.mutator = Mutator(config=fcfg['mutations'])
     
     def run(self):
         corpus_results: List[ExecutionResult] = []
@@ -83,7 +84,7 @@ class AgentFuzzer:
             return True
 
         execution_limit = self.run_config['fuzzer']['execution_limit']
-        mutations_per_seed = self.run_config['fuzzer']['mutations_per_seed']
+        num_mutations = self.run_config['fuzzer']['mutations']['num_mutations']
 
         stop_due_to_time = False
 
@@ -94,17 +95,17 @@ class AgentFuzzer:
             seed = self.seed_queue.pop_seed()
             self._popped_seeds.append(seed)
             
-            mutations = mutate(
+            mutations = self.mutator.mutate(
                 input=seed,
-                num_mutations=mutations_per_seed
+                num_mutations=num_mutations
             )
             
             accepted_results: list[ExecutionResult] = []
             rejected_results: list[ExecutionResult] = []
 
             for mutation in mutations:
-                self.all_mutations.append(mutation.decode('utf-8', errors='replace'))
-                result = execute_with_qiling(mutation, self.run_config)
+                self.all_mutations.append(mutation)
+                result = execute_with_qiling(mutation.encode('utf-8'), self.run_config)
                 
                 if result.execution_outcome == ExecutionOutcome.CRASH:
                     crashes.append(CrashResult(
@@ -147,6 +148,7 @@ class AgentFuzzer:
             average_execution_time_seconds=execution_time / execution_count if execution_count > 0 else 0,
             crash_rate=((len(crashes) / execution_count) if execution_count > 0 else 0),
             corpus_stat_result=self.corpus_stat_tracker.get_result(),
+            token_usage=TokenUsage(input_tokens=0, output_tokens=0, total_tokens=0),  # No token usage for operators fuzzer
             coverage_over_time=self.corpus_stat_tracker.get_coverage_snapshots(),
         )
 

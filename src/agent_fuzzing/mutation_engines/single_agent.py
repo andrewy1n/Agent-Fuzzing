@@ -40,7 +40,7 @@ class GeneratorAgent:
 class MutationSession:
     def __init__(self, config: dict):
         self.generator_agent = GeneratorAgent(config=config['generator_agent'])
-        self.mutations_per_seed = config['fuzzer']['mutations_per_seed']
+        self.mutations_per_seed = config['fuzzer']['mutations']['num_mutations']
         self.token_usage = TokenUsage(
             input_tokens=0,
             output_tokens=0,

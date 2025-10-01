@@ -21,9 +21,9 @@ operators = response.json()['operators']
 
 mutations = []
 for operator in operators:
-    response = requests.get(
+    response = requests.post(
         f"{server}/mutate/{operator['name']}",
-        params={"data": input_data},
+        json={"data": input_data},
         timeout=5
     )
     response.raise_for_status()

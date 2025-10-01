@@ -5,9 +5,9 @@ class Mutator:
         self.server = config['server']      
 
     def mutate(self, input: bytes, num_mutations: int) -> list[bytes]:
-        response = requests.get(
+        response = requests.post(
             f"{self.server}/mutate_random",
-            params={"data": input.decode('utf-8'), "num_mutations": num_mutations},
+            json={"data": input.decode('utf-8'), "num_mutations": num_mutations},
             timeout=5
         )
         response.raise_for_status()

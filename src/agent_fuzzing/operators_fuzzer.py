@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List
 import random
 from datetime import datetime
-import codecs
 
 from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOutcome, FuzzerResult, TokenUsage
 from .ql_emulation import execute_with_qiling
@@ -54,11 +53,10 @@ class AgentFuzzer:
         initial_seed_count = 0
 
         for seed_value in self.seed_inputs:
-            seed_bytes = codecs.decode(seed_value, 'unicode_escape').encode('utf-8')
-            self.seed_queue.add_seed(seed_bytes)
+            self.seed_queue.add_seed(seed_value)
         
         for initial_seed in self.seed_queue.queue:
-            result = execute_with_qiling(initial_seed, self.run_config)
+            result = execute_with_qiling(initial_seed.encode('utf-8'), self.run_config)
             corpus_results.append(result)
             if result.execution_outcome == ExecutionOutcome.CRASH:
                 crashes.append(CrashResult(

@@ -55,16 +55,85 @@ _meta:
         - name: <execution_value_name>
 
 fuzzer:
-  time_limit: 10
+  time_limit: 600
   execution_limit: 0
   per_run_timeout: 5
+  coverage_plateau_timeout_seconds: 60
   mutations:
     num_mutations: 10
     server: http://localhost:8001
+    operators_file: /home/andrewyin/qiling_tests/Agent-Fuzzing/operators.json
   seed_inputs:
+  - '0,1 0,2
+
+    '
+  - '1,0 2,2
+
+    '
+  - '0,6 0,5
+
+    '
+  - '7,7 6,6
+
+    '
+  - '2,1 3,2
+
+    '
+  - '3,3 4,4
+
+    '
   stdout: false
   execution_values:
+  - name: move_qw1
+    read:
+      mode: register_direct
+      capture_pc_offset: 13057
+      reg: rdx
+      size: 8
+    valid_values:
+      type: int
+      range:
+      - 0
+      - 18446744073709551615
+      signed: false
+    notes: First 8 bytes of Move struct passed in RDX at performMove call site. Contains
+      src.x (low 4 bytes) and src.y (high 4 bytes) as 32-bit integers; expected values
+      0..7 for board coordinates.
+  - name: move_qw2
+    read:
+      mode: register_direct
+      capture_pc_offset: 13057
+      reg: rax
+      size: 8
+    valid_values:
+      type: int
+      range:
+      - 0
+      - 18446744073709551615
+      signed: false
+    notes: Second 8 bytes of Move struct passed in RAX at performMove call site. Contains
+      dst.x (low 4 bytes) and dst.y (high 4 bytes) as 32-bit integers; expected values
+      0..7 for board coordinates.
+  - name: current_team
+    read:
+      mode: mem_offset
+      capture_pc_offset: 12884
+      offset_from_image: 24576
+      size: 1
+    valid_values:
+      type: enum
+      values:
+      - 0
+      - 1
+    notes: 'Global byte holding current_team: 1 = WHITE, 0 = BLACK. Reading at image-base
+      + 0x6000.'
   execution_state:
+  - type: value
+    name: move_qw1
+  - type: value
+    name: move_qw2
+  - type: value
+    name: current_team
 
 corpus_stat_tracker:
   snapshot_interval_seconds: 10
@@ -96,8 +165,8 @@ generator_agent:
 
 critic_agent:
   server: 'http://localhost:8000'
-  thread_id: ''
-  binary_path: ''
+  thread_id: 'cgc::CROMU_00005::a5a8cc76-cf2b-41ab-8651-6e80d8617833'
+  binary_path: 'cgc_bin/CROMU_00005'
   results_dir: ''
   initial_prompt: |
     You are a critic for a fuzzing mutation agent. 

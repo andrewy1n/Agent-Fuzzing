@@ -381,11 +381,11 @@ class AgentFuzzer:
         
         try:
             response = requests.post(
-                f"{server}/continue_conversation",
+                f"{server}/continue_mutation_agent",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 stream=True,
-                timeout=30
+                timeout=60
             )
             response.raise_for_status()
             

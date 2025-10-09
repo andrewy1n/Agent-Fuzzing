@@ -372,7 +372,7 @@ class AgentFuzzer:
         server = critic_config.get('server', 'http://localhost:8000')
         
         payload = {
-            "thread_id": critic_config.get('thread_id', ''),
+            "thread_id": f"{critic_config.get('thread_id', '')}::mutation_agent",
             "binary_path": critic_config.get('binary_path', ''),
             "results_dir": str(self.output_dir),
             "prompt": message,

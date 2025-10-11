@@ -53,142 +53,87 @@ _meta:
 
         - type: set # set of all values seen for the given execution value name
         - name: <execution_value_name>
-    - path: generator_agent.grammar_prompt
-      type: string
-    - path: generator_agent.goal_prompt
-      type: string
 
 fuzzer:
-  time_limit: 30
+  time_limit: 600
   execution_limit: 0
   per_run_timeout: 5
-  mutations_per_seed: 4
-  round_length: 10
+  coverage_plateau_timeout_seconds: 60
+  mutations:
+    num_mutations: 10
+    server: http://localhost:8001
+    operators_file: /home/andrewyin/qiling_tests/Agent-Fuzzing/operators.json
   seed_inputs:
-    - '0,1 0,2
+  - '0,1 0,2
 
-      9
+    '
+  - '1,0 2,2
 
-      '
-    - '1,0 2,2
+    '
+  - '0,6 0,5
 
-      9
+    '
+  - '7,7 6,6
 
-      '
-    - '4,1 4,2
+    '
+  - '2,1 3,2
 
-      9
+    '
+  - '3,3 4,4
 
-      '
-    - '7,1 7,2
-
-      9
-
-      '
-    - '9
-
-      '
-    - '666
-
-      '
-    - '2,1 2,2
-
-      9
-
-      '
+    '
   stdout: false
   execution_values:
-    - name: board_snapshot
-      read:
-        mode: register_deref
-        capture_pc_offset: 9383
-        reg: rcx
-        ptr_size: 8
-        size: 64
-      valid_values:
-        type: bytes
-        alphabet:
-        - 46
-        - 97
-        - 98
-        - 99
-        - 100
-        - 101
-        - 102
-        - 103
-        - 104
-        - 105
-        - 106
-        - 107
-        - 108
-        length: 64
-      notes: Reads the 8x8 board (row-major x*8+y) by dereferencing RCX after it is
-        loaded in getPiece.
-    - name: ptr_array_ptr
-      read:
-        mode: mem_offset
-        capture_pc_offset: 9383
-        offset_from_image: 24584
-        size: 8
-      valid_values:
-        type: int
-        signed: false
-        range:
-        - 0
-        - 18446744073709551615
-      notes: Read the global ptr_array pointer stored at image+0x6008.
-    - name: rcx_at_getPiece
-      read:
-        mode: register_direct
-        capture_pc_offset: 9383
-        reg: rcx
-        size: 8
-      valid_values:
-        type: int
-        signed: false
-        range:
-        - 0
-        - 18446744073709551615
-      notes: Capture RCX register after it is loaded with ptr_array in getPiece.
-    - name: board_snapshot_display
-      read:
-        mode: register_deref
-        capture_pc_offset: 8845
-        reg: rdx
-        ptr_size: 8
-        size: 64
-      valid_values:
-        type: bytes
-        alphabet:
-        - 46
-        - 97
-        - 98
-        - 99
-        - 100
-        - 101
-        - 102
-        - 103
-        - 104
-        - 105
-        - 106
-        - 107
-        - 108
-        length: 64
-      notes: Reads board memory by dereferencing RDX after it is loaded in displayboard
-        when printing rows.
+  - name: move_qw1
+    read:
+      mode: register_direct
+      capture_pc_offset: 13057
+      reg: rdx
+      size: 8
+    valid_values:
+      type: int
+      range:
+      - 0
+      - 18446744073709551615
+      signed: false
+    notes: First 8 bytes of Move struct passed in RDX at performMove call site. Contains
+      src.x (low 4 bytes) and src.y (high 4 bytes) as 32-bit integers; expected values
+      0..7 for board coordinates.
+  - name: move_qw2
+    read:
+      mode: register_direct
+      capture_pc_offset: 13057
+      reg: rax
+      size: 8
+    valid_values:
+      type: int
+      range:
+      - 0
+      - 18446744073709551615
+      signed: false
+    notes: Second 8 bytes of Move struct passed in RAX at performMove call site. Contains
+      dst.x (low 4 bytes) and dst.y (high 4 bytes) as 32-bit integers; expected values
+      0..7 for board coordinates.
+  - name: current_team
+    read:
+      mode: mem_offset
+      capture_pc_offset: 12884
+      offset_from_image: 24576
+      size: 1
+    valid_values:
+      type: enum
+      values:
+      - 0
+      - 1
+    notes: 'Global byte holding current_team: 1 = WHITE, 0 = BLACK. Reading at image-base
+      + 0x6000.'
   execution_state:
   - type: value
-    name: rcx_at_getPiece
+    name: move_qw1
   - type: value
-    name: ptr_array_ptr
-  - type: predicate
-    expr: rcx_at_getPiece == ptr_array_ptr
+    name: move_qw2
   - type: value
-    name: board_snapshot
-  - type: set
-    name: board_snapshot
-  - type: value
-    name: board_snapshot_display
+    name: current_team
 
 corpus_stat_tracker:
   snapshot_interval_seconds: 10
@@ -216,104 +161,12 @@ generator_agent:
     - Each element in "mutations" is a single test input as a UTF-8 string (it will be converted to bytes by the harness).
     - Do not include explanations, comments, or code fences.
   grammar_prompt: |
-    "Input grammar for CROMU_00005 (board game parser):\n- Move format\
-    \ (exactly 7 characters before newline): <X>,<Y> <X>,<Y>\\n\n  - X and Y are single\
-    \ ASCII digits '0'..'7' representing coordinates on an 8x8 board.\n  - The exact\
-    \ byte layout is: DIGIT (0-7), 0x2C ',' , DIGIT (0-7), 0x20 ' ' , DIGIT (0-7),\
-    \ 0x2C ',' , DIGIT (0-7), followed by a terminating newline (0x0A).\n  - The generator\
-    \ MUST enforce that each coordinate digit is in the range 0-7 and that the length\
-    \ (excluding newline) is 7.\n- Special commands (single-line alternatives):\n\
-    \  - \"9\\n\" (single char '9' then newline) -- display the board (parseUserInput\
-    \ returns code 2).\n  - \"666\\n\" (three characters '6','6','6' then newline)\
-    \ -- quit command (parseUserInput returns code 3).\n- Notes/constraints:\n  -\
-    \ Always terminate inputs with a single newline character (0x0A).\n  - Do NOT\
-    \ produce other lengths: valid move lines must be 7 bytes + newline; display and\
-    \ quit are 1+newline and 3+newline respectively.\n  - Coordinates must be ASCII\
-    \ digits between '0' and '7'.\n  - The generator should avoid embeddings of non-printable\
-    \ bytes except newline.\n\nGenerator goals for producing smart mutations:\n- Produce\
-    \ inputs that set specific board_snapshot patterns by moving pieces. Examples:\
-    \ move a pawn from y=1 to y=3 (two-step), move a knight (L-shape), or moves that\
-    \ capture (if possible).\n- Preserve the move syntax while mutating coordinates\
-    \ to explore board squares (mutate only the four digit positions).\n- Generate\
-    \ both syntactically valid but illegal-in-game moves (to test parsing and rejection)\
-    \ and syntactically valid legal moves (to advance board state).\n- Generate special\
-    \ command inputs (\"9\\n\" and \"666\\n\") to trigger display and quit behaviors.\n\
-    - Ensure coordinate digits are in '0'..'7'. For move-targeted generation prefer\
-    \ values that hit different x,y combinations to produce diverse board snapshots.\n\
-    - When aiming to produce a certain board_snapshot, mutate digits so that the move's\
-    \ src points to a square that currently contains a movable piece (x*8+y) and dst\
-    \ points to a valid destination for that piece type (e.g., knight L-shapes, pawn\
-    \ forward 1 or 2 steps)."
   goal_prompt: |
-    Generator agent goals (short):
-
-    1) Create syntactically valid moves: format DIGIT,'',''DIGIT '' '' DIGIT,'',''DIGIT
-    + newline. Coordinates 0-7.
-
-    2) Produce inputs that will change the board_snapshot execution value (i.e., legal
-    moves for the current team). Prioritize moves from white-side squares (src y==1
-    for pawns, src y==0 for back-rank pieces) so that the performMove path succeeds
-    and board bytes change.
-
-    3) Also produce valid but illegal moves to exercise rejection code paths (parse
-    succeeds but performMove returns 0).
-
-    4) Include the special control commands ''9\n'' and ''666\n''.
-
-    Mutation constraints: only mutate the coordinate digit bytes (positions 0,2,4,6
-    of the line) and preserve separators and newline. Keep digits within 0-7.
-
-
-    Explicit state-targeted tasks for the generator:
-
-    - Produce inputs that, after execution, result in a different board_snapshot (the
-    set of board bytes should change).
-
-    - Produce inputs that flip the piece at a chosen source index (x*8+y) to ''.''
-    and create the same piece at the destination index.
-
-    - Prefer small, valid coordinate edits (neighboring squares, knight jumps, pawn
-    2-step) to maximize reachability while preserving validity.
-
-summarizer_agent:
-  model: 'gpt-5-mini'
-  system_prompt: |
-    You are a summarizer agent. Your task is to analyze all the mutation results from a fuzzer. 
-    You are given two lists:
-    1. Failed mutations (did not expand coverage).
-    2. Successful mutations (expanded coverage).
-
-    Your goal is to produce a concise, structured summary of the mutation results.
-
-    ### Instructions:
-    - Identify common **patterns in failures** (e.g., repeated sources, small shifts, 
-      horizontal/vertical moves, etc.).
-    - Identify common **patterns in successes** (e.g., diagonal jumps, moves from certain 
-      rows/columns).
-    - Provide a few **representative examples** of failed and successful mutations 
-      (not the full list).
-
-    Keep the summary short and clear.
-
-    ### Input:
-    Failed mutations:
-    {failed_mutations}
-
-    Successful mutations:
-    {successful_mutations}
-
-    ### Output format:
-    Summary of last round:
-    - Failed patterns: ...
-    - Successful patterns: ...
-    - Representative examples:
-      - Successful: [...]
-      - Failed: [...]
 
 critic_agent:
   server: 'http://localhost:8000'
-  thread_id: ''
-  binary_path: ''
+  thread_id: 'cgc::CROMU_00005::a5a8cc76-cf2b-41ab-8651-6e80d8617833'
+  binary_path: 'cgc_bin/CROMU_00005'
   results_dir: ''
   initial_prompt: |
     You are a critic for a fuzzing mutation agent. 

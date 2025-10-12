@@ -118,14 +118,14 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
     execution_value_samples: dict = {}
     execution_outcome = ExecutionOutcome.NORMAL
 
-    BINARY_PATH = run_config['target']['binary']
+    BINARY_PATH = run_config['target'].get('binary_path') or run_config['target'].get('binary')
     ROOTFS_PATH = run_config['target']['rootfs']
     PER_RUN_TIMEOUT = run_config['fuzzer'].get('per_run_timeout', 0)
     STDOUT = run_config['fuzzer'].get('stdout', False) or force_stdout
     MAP_SIZE = 1 << 16
 
     # Convert execution_values list to dict for efficient lookup
-    execution_values_list = run_config['fuzzer'].get('execution_values', [])
+    execution_values_list = run_config['fuzzer'].get('execution_values') or []
     EXECUTION_VALUES_DICT = {item['name']: item for item in execution_values_list}
 
     cov_bitmap = bytearray(MAP_SIZE)
@@ -372,7 +372,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         for name, values in execution_value_samples.items():
             print(f"{name}: {values}")
 
-    state_spec = run_config['fuzzer']['execution_state']
+    state_spec = run_config['fuzzer'].get('execution_state') or []
 
     latest_values = {k: v_list[-1] for k, v_list in execution_value_samples.items() if v_list}
 

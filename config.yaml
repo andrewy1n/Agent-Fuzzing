@@ -47,7 +47,8 @@ corpus_stat_tracker:
   snapshot_interval_seconds: 10
 
 target:
-  binary: 'samples/CROMU_00005'
+  binary_path: ''
+  cgc_binary: ''
   rootfs: 'rootfs/x8664_linux_glibc2.39'
 
 input:

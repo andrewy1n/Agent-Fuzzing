@@ -87,91 +87,6 @@ def _compute_image_range(image) -> tuple[int, int]:
         sys.stderr.write("[error] unsupported ELF class for range computation\n")
         sys.stderr.flush()
 
-def _validate_execution_state_value(value: Union[bytes, int], valid_values_config: dict) -> Union[bytes, int]:
-    if not valid_values_config:
-        return value
-        
-    val_type = valid_values_config.get('type')
-    
-    try:
-        if val_type == 'enum':
-            if isinstance(value, (bytes, bytearray)):
-                int_val = int.from_bytes(value, byteorder='little')
-            else:
-                int_val = value
-            
-            allowed_values = valid_values_config.get('values', [])
-            if int_val in allowed_values:
-                return int_val
-            else:
-                raise ValueError(f"Invalid enum value: {int_val} not in allowed values {allowed_values}")
-                
-        elif val_type == 'int':
-            if isinstance(value, (bytes, bytearray)):
-                int_val = int.from_bytes(value, byteorder='little', signed=valid_values_config.get('signed', False))
-            else:
-                int_val = value
-                
-            val_range = valid_values_config.get('range', [])
-            if len(val_range) == 2:
-                min_val, max_val = val_range
-                if min_val <= int_val <= max_val:
-                    return int_val
-                else:
-                    raise ValueError(f"Integer value {int_val} out of range [{min_val}, {max_val}]")
-            return int_val
-            
-        elif val_type == 'bytes':
-            if not isinstance(value, (bytes, bytearray)):
-                if isinstance(value, int):
-                    value = value.to_bytes(4, byteorder='little')
-                else:
-                    raise ValueError(f"Cannot convert {type(value)} to bytes")
-            
-            if isinstance(value, bytearray):
-                value = bytes(value)
-                
-            expected_length = valid_values_config.get('length')
-            if expected_length is not None and len(value) != expected_length:
-                raise ValueError(f"Bytes length {len(value)} does not match expected length {expected_length}")
-                    
-            alphabet = valid_values_config.get('alphabet', [])
-            if alphabet:
-                for i, byte_val in enumerate(value):
-                    if byte_val not in alphabet:
-                        raise ValueError(f"Invalid byte 0x{byte_val:02x} at position {i}, not in allowed alphabet")
-                
-            return value
-            
-        elif val_type == 'float':
-            if isinstance(value, bytes):
-                if len(value) == 4:
-                    import struct
-                    float_val = struct.unpack('<f', value)[0]
-                elif len(value) == 8:
-                    import struct
-                    float_val = struct.unpack('<d', value)[0]
-                else:
-                    raise ValueError(f"Invalid byte length {len(value)} for float (expected 4 or 8)")
-            else:
-                float_val = float(value)
-                
-            val_range = valid_values_config.get('range', [])
-            if len(val_range) == 2:
-                min_val, max_val = val_range
-                if min_val <= float_val <= max_val:
-                    return value if isinstance(value, bytes) else float_val
-                else:
-                    raise ValueError(f"Float value {float_val} out of range [{min_val}, {max_val}]")
-            return value if isinstance(value, bytes) else float_val
-            
-    except Exception as e:
-        sys.stderr.write(f"[warning] validation failed for value {value}: {e}\n")
-        sys.stderr.flush()
-        return None
-        
-    return None
-
 def _coerce_value_to_int(value: Union[bytes, bytearray, int]) -> int:
     if isinstance(value, int):
         return value
@@ -208,7 +123,10 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
     PER_RUN_TIMEOUT = run_config['fuzzer'].get('per_run_timeout', 0)
     STDOUT = run_config['fuzzer'].get('stdout', False) or force_stdout
     MAP_SIZE = 1 << 16
-    EXECUTION_VALUES_DICT = run_config['fuzzer']['execution_values']
+
+    # Convert execution_values list to dict for efficient lookup
+    execution_values_list = run_config['fuzzer'].get('execution_values', [])
+    EXECUTION_VALUES_DICT = {item['name']: item for item in execution_values_list}
 
     cov_bitmap = bytearray(MAP_SIZE)
     prev_loc = [0]
@@ -254,60 +172,6 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
 
         ql.add_fs_mapper('/dev/urandom', '/dev/urandom')
         ql.add_fs_mapper('/dev/random', '/dev/urandom')
-
-        for state_item in EXECUTION_VALUES_DICT:
-            name = state_item['name']
-            mode = state_item['read']['mode']
-            valid_values_config = state_item.get('valid_values', {})
-            
-            if mode == 'register_direct':
-                capture_pc_offset = state_item['read']['capture_pc_offset']
-                reg = state_item['read']['reg']
-                size = state_item['read']['size']
-                def make_capture_function(state_name, register, capture_size, validation_config):
-                    def capture_state_at_address(ql: Qiling, address: int, size_param: int):
-                        reg_value = getattr(ql.arch.regs, register)
-                        reg_bytes = reg_value.to_bytes(8, byteorder='little')[:capture_size]
-                        
-                        validated_value = _validate_execution_state_value(reg_bytes, validation_config)
-                        if validated_value is None:
-                            return
-                        execution_value_samples.setdefault(state_name, []).append(validated_value)
-                    return capture_state_at_address
-                hook_func = make_capture_function(name, reg, size, valid_values_config)
-                ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
-            elif mode == 'register_deref':
-                capture_pc_offset = state_item['read']['capture_pc_offset']
-                reg = state_item['read']['reg']
-                ptr_size = state_item['read']['ptr_size']
-                size = state_item['read']['size']
-                def make_deref_capture_function(state_name, register, capture_size, validation_config):
-                    def capture_state_at_address(ql: Qiling, address: int, size_param: int):
-                        reg_value = getattr(ql.arch.regs, register)
-                        data = ql.mem.read(reg_value, capture_size)
-                        validated_value = _validate_execution_state_value(data, validation_config)
-                        if validated_value is None:
-                            return
-                        execution_value_samples.setdefault(state_name, []).append(validated_value)
-                        return
-                    return capture_state_at_address
-                hook_func = make_deref_capture_function(name, reg, size, valid_values_config)
-                ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
-            elif mode == 'mem_offset':
-                capture_pc_offset = state_item['read']['capture_pc_offset']
-                offset_from_image = state_item['read']['offset_from_image']
-                size = state_item['read']['size']
-                def make_mem_capture_function(state_name, offset, capture_size, validation_config):
-                    def capture_state_at_address(ql: Qiling, address: int, size_param: int):
-                        data = ql.mem.read(img.base + offset, capture_size)
-                        validated_value = _validate_execution_state_value(data, validation_config)
-                        if validated_value is None:
-                            return
-                        execution_value_samples.setdefault(state_name, []).append(validated_value)
-                        return
-                    return capture_state_at_address
-                hook_func = make_mem_capture_function(name, offset_from_image, size, valid_values_config)
-                ql.hook_code(hook_func, begin=img.base + capture_pc_offset, end=img.base + capture_pc_offset + 1)
 
         def block_cov_cb(ql, address, size):
             cur = ((address >> 4) ^ (address << 8)) & 0xFFFFFFFF
@@ -464,10 +328,50 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         if 'call_depth' not in locals():
             call_depth = 0
     
+    # Parse execution values from stdout
+    if 'stdout_buffer' in locals() and stdout_buffer:
+        try:
+            stdout_text = stdout_buffer.decode('utf-8', errors='ignore')
+            for line in stdout_text.splitlines():
+                line = line.strip()
+                # Look for "name: value" patterns anywhere in the line
+                for exec_name in EXECUTION_VALUES_DICT.keys():
+                    pattern = f"{exec_name}:"
+                    if pattern in line:
+                        # Extract the value after "name:"
+                        idx = line.find(pattern)
+                        value_part = line[idx + len(pattern):].strip()
+
+                        # Take only the first token (split by whitespace)
+                        value_str = value_part.split()[0] if value_part.split() else value_part
+
+                        # Parse value based on type
+                        exec_value_def = EXECUTION_VALUES_DICT[exec_name]
+                        value_type = exec_value_def.get('type', 'string')
+
+                        try:
+                            if value_type == 'int':
+                                value = int(value_str)
+                            elif value_type == 'float':
+                                value = float(value_str)
+                            elif value_type == 'bool':
+                                value = int(value_str) if value_str.isdigit() else (1 if value_str.lower() in ('true', 'yes', '1') else 0)
+                            else:
+                                value = value_str
+
+                            # Store the value
+                            if exec_name not in execution_value_samples:
+                                execution_value_samples[exec_name] = []
+                            execution_value_samples[exec_name].append(value)
+                        except (ValueError, TypeError, IndexError):
+                            pass
+        except Exception:
+            pass
+
     if show_execution_values:
         for name, values in execution_value_samples.items():
             print(f"{name}: {values}")
-    
+
     state_spec = run_config['fuzzer']['execution_state']
 
     latest_values = {k: v_list[-1] for k, v_list in execution_value_samples.items() if v_list}

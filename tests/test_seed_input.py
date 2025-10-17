@@ -1,6 +1,6 @@
 import yaml
 import codecs
-from agent_fuzzing.ql_emulation import execute_with_qiling
+from ExecStateFuzzer.ql_emulation import execute_with_qiling
 
 run_config = yaml.safe_load(open("config.yaml"))
 

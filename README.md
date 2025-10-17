@@ -1,6 +1,6 @@
-# Agent-Fuzzing
+# Execution State Fuzzer
 
-Agentic fuzzing framework that combines LLM-based mutation operators with coverage-guided feedback using the Qiling emulation framework.
+Fuzzing framework using logging-style coverage-guided feedback.
 
 ## Key Features
 

@@ -7,32 +7,7 @@ _meta:
       description: |
         List of execution state definitions. Each state can include:
         - name: semantic name of the state
-        - read: read spec dictionary
-            # for register-direct mode
-            mode: register_direct
-            capture_pc_offset: <hex_offset> # PC offset from image base where snapshot occurs (required for register modes)
-            reg: <register_name>            # Register name (e.g., al, rax)
-            size: <int>                     # Bytes to read
-
-            # for mem_offset mode
-            mode: mem_offset
-            capture_pc_offset: <hex_offset> # PC offset from image base where snapshot occurs
-            offset_from_image: <hex_offset> # Offset from image base to read
-            size: <int>          # Bytes to read
-
-            # for register_deref mode
-            mode: register_deref
-            capture_pc_offset: <hex_offset> # PC offset where pointer is loaded into register
-            reg: <register_name>            # Register containing pointer
-            ptr_size: <int>                  # Size of the pointer (bytes)
-            size: <int>                      # Number of bytes to read at dereferenced address
-        - valid_values:                      # Optional constraints to guide generator
-            type: <enum|bytes|int|float>
-            values: [<list_of_values>]       # for enums
-            alphabet: [<allowed_bytes>]      # for bytes
-            length: <int>                     # for bytes arrays
-            signed: <true|false>             # for integers
-            range: [<min>, <max>]            # for int/float ranges
+        - type: type of the state, one of: int, float, bool, string
         - notes: human-readable explanation
     - path: fuzzer.execution_state
       type: list
@@ -64,82 +39,16 @@ fuzzer:
     server: http://localhost:8001
     operators_file: /home/andrewyin/qiling_tests/Agent-Fuzzing/operators.json
   seed_inputs:
-  - '0,1 0,2
-
-    '
-  - '1,0 2,2
-
-    '
-  - '0,6 0,5
-
-    '
-  - '7,7 6,6
-
-    '
-  - '2,1 3,2
-
-    '
-  - '3,3 4,4
-
-    '
   stdout: false
   execution_values:
-  - name: move_qw1
-    read:
-      mode: register_direct
-      capture_pc_offset: 13057
-      reg: rdx
-      size: 8
-    valid_values:
-      type: int
-      range:
-      - 0
-      - 18446744073709551615
-      signed: false
-    notes: First 8 bytes of Move struct passed in RDX at performMove call site. Contains
-      src.x (low 4 bytes) and src.y (high 4 bytes) as 32-bit integers; expected values
-      0..7 for board coordinates.
-  - name: move_qw2
-    read:
-      mode: register_direct
-      capture_pc_offset: 13057
-      reg: rax
-      size: 8
-    valid_values:
-      type: int
-      range:
-      - 0
-      - 18446744073709551615
-      signed: false
-    notes: Second 8 bytes of Move struct passed in RAX at performMove call site. Contains
-      dst.x (low 4 bytes) and dst.y (high 4 bytes) as 32-bit integers; expected values
-      0..7 for board coordinates.
-  - name: current_team
-    read:
-      mode: mem_offset
-      capture_pc_offset: 12884
-      offset_from_image: 24576
-      size: 1
-    valid_values:
-      type: enum
-      values:
-      - 0
-      - 1
-    notes: 'Global byte holding current_team: 1 = WHITE, 0 = BLACK. Reading at image-base
-      + 0x6000.'
   execution_state:
-  - type: value
-    name: move_qw1
-  - type: value
-    name: move_qw2
-  - type: value
-    name: current_team
 
 corpus_stat_tracker:
   snapshot_interval_seconds: 10
 
 target:
-  binary: 'samples/CROMU_00005'
+  binary_path: ''
+  cgc_binary: ''
   rootfs: 'rootfs/x8664_linux_glibc2.39'
 
 input:
@@ -147,21 +56,6 @@ input:
 
 output:
   dir: 'out'
-
-generator_agent:
-  model: 'gpt-4.1-mini'
-  system_prompt: |
-    You are a mutation agent for a agent-driven fuzzer.
-    Your job: given a seed input and feedback (good/bad examples), produce a diverse list of input mutations that are more like the good examples and less like the bad ones, with the goal of increasing execution state coverage.
-
-    You will be given feedback from a critic agent that will guide you toward deeper execution states, make sure to follow the most recent instructions.
-
-    Output format:
-    - Return ONLY a JSON object that matches this schema: {"mutations": [string, ...]}.
-    - Each element in "mutations" is a single test input as a UTF-8 string (it will be converted to bytes by the harness).
-    - Do not include explanations, comments, or code fences.
-  grammar_prompt: |
-  goal_prompt: |
 
 critic_agent:
   server: 'http://localhost:8000'

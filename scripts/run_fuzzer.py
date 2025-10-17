@@ -1,8 +1,8 @@
-from agent_fuzzing.fuzzer import AgentFuzzer
+from ExecStateFuzzer.fuzzer import Fuzzer
 
 
 def main():    
-    fuzzer = AgentFuzzer()
+    fuzzer = Fuzzer()
     fuzzer.run()
 
 

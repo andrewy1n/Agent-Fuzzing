@@ -1,7 +1,7 @@
 [project]
-name = "agent-fuzzing"
+name = "ExecStateFuzzer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Fuzzing framework using logging-style coverage-guided feedback."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

@@ -25,7 +25,7 @@ class SeedQueue:
     def is_empty(self) -> bool:
         return len(self.queue) == 0
 
-class AgentFuzzer:
+class Fuzzer:
     def __init__(self):
         self.run_config = yaml.safe_load(open('config.yaml'))
         self.state_set: ExecutionStateSet = set()
@@ -356,7 +356,6 @@ class AgentFuzzer:
         return False
     
     def call_continue_conversation(self, operator_effectiveness: dict):
-        
         message = f"""
         Coverage plateau detected after {self.coverage_plateau_timeout} seconds without new coverage.
 
@@ -368,12 +367,12 @@ class AgentFuzzer:
         
         message += "\nPlease modify the mutation operators to improve coverage effectiveness."
         
-        critic_config = self.run_config.get('critic_agent', {})
-        server = critic_config.get('server', 'http://localhost:8000')
+        mutation_agent_config = self.run_config.get('mutation_agent', {})
+        server = mutation_agent_config.get('server', 'http://localhost:8000')
         
         payload = {
-            "thread_id": f"{critic_config.get('thread_id', '')}::mutation_agent",
-            "binary_path": critic_config.get('binary_path', ''),
+            "thread_id": f"{mutation_agent_config.get('thread_id', '')}::mutation_agent",
+            "binary_path": mutation_agent_config.get('binary_path', ''),
             "results_dir": str(self.output_dir),
             "prompt": message,
             "recursion_limit": 20

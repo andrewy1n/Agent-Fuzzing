@@ -1,7 +1,7 @@
 import yaml
 import argparse
 import codecs
-from agent_fuzzing.ql_emulation import execute_with_qiling
+from ExecStateFuzzer.ql_emulation import execute_with_qiling
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input', type=str, required=True)

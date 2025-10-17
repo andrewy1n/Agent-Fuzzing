@@ -46,13 +46,13 @@ python scripts/run_fuzzer.py
 ### Starting the Mutation Operator Server
 
 ```bash
-python src/agent_fuzzing/mutation_engines/operator_server.py
+fastapi run src/agent_fuzzing/mutation_engines/operator_server.py 
 ```
 
 ### Building CGC Binaries
 
 ```bash
-python scripts/build_cgc_bin.py
+python scripts/build_cgc_bin.py # builds from challenge defined in config
 ```
 
 ## How It Works

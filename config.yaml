@@ -33,22 +33,56 @@ fuzzer:
   time_limit: 600
   execution_limit: 0
   per_run_timeout: 5
-  coverage_plateau_timeout_seconds: 60
   mutations:
     num_mutations: 10
     server: http://localhost:8001
     operators_file: /home/andrewyin/qiling_tests/ExecStateFuzzer/operators.json
   seed_inputs:
-  stdout: false
+    - 1,1 1,2
+    - 1,1 1,3
+    - 1,1 1,4
+    - 1,1 1,5
+    - 1,1 1,6
+    - 1,1 1,7
+    - 1,1 1,8
+    - 1,1 1,9
+    - 1,1 1,10
+  stdout: true
   execution_values:
+    - name: knight_move_success
+      type: bool
+      notes: "1 if WHITE knight move succeeded"
+    - name: knight_position_x
+      type: int
+      notes: "Destination x for WHITE knight"
+    - name: knight_position_y
+      type: int
+      notes: "Destination y for WHITE knight"
+    - name: pawn_white_move_success
+      type: bool
+      notes: "1 if WHITE pawn move succeeded"
+    - name: pawn_white_position_y
+      type: int
+      notes: "Destination y for WHITE pawn"
   execution_state:
+    - type: value
+      name: knight_move_success
+    - type: value
+      name: knight_position_x
+    - type: value
+      name: knight_position_y
+    - type: value
+      name: pawn_white_move_success
+    - type: value
+      name: pawn_white_position_y
 
 corpus_stat_tracker:
   snapshot_interval_seconds: 10
+  coverage_plateau_timeout_seconds: 10
 
 target:
-  binary_path: ''
-  cgc_binary: ''
+  binary_path: 'samples/CROMU_00005'
+  cgc_binary: 'CROMU_00005'
   rootfs: 'rootfs/x8664_linux_glibc2.39'
 
 input:
@@ -57,8 +91,9 @@ input:
 output:
   dir: 'out'
 
-mutation_agent:
-  server: 'http://localhost:8000'
-  thread_id: 'cgc::CROMU_00005::a5a8cc76-cf2b-41ab-8651-6e80d8617833'
-  binary_path: 'cgc_bin/CROMU_00005'
-  results_dir: ''
+coverage_plateau_flow:
+  endpoint: 'http://localhost:8000/run_coverage_plateau_flow'
+  thread_id: CROMU_00005_20251111_182916::deep_agent
+  source_docker_id: 618a48a28216862b93e6780e59a29dda77ab04d3be9d104cb75e75d8322e39d5
+  fuzzer_docker_id: e2aa20b9451433bcd25868f7d0bf9b11072c665a22e8aef3fbc3e1bff23aa4c1
+  results_dir: results/CROMU_00005_20251111_182915/cov_plat_0

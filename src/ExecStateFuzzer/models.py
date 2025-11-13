@@ -66,4 +66,26 @@ class FuzzerResult(BaseModel):
     token_usage: TokenUsage
     coverage_over_time: List[CoverageSnapshot]
 
+class OperatorEffectivenessData(BaseModel):
+    operator_name: str
+    mutation: str
+    new_edge_coverage: bool
+    new_execution_state: bool
+    execution_time: float
+    iteration: int
+
+class OperatorEffectivenessSummary(BaseModel):
+    operator_name: str
+    edge_coverage_percentage: float
+    execution_state_percentage: float
+    unique_mutation_percentage: float
+    total_mutations: int
+
+class SessionData(BaseModel):
+    operator_effectiveness: List[OperatorEffectivenessSummary]
+    unique_mutations: int
+    total_mutations: int
+    num_corpus_execution_states: int
+    execution_states_summary: str
+
 ExecutionStateSet = set[tuple]

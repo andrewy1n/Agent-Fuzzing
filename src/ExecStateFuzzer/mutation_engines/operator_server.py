@@ -87,7 +87,13 @@ def mutate_random(request: MutateRequest):
         selected_name = random.choices(names, weights=weights)[0]
         operator_func = mutation_operators[selected_name][1]
         
-        mutated_data = operator_func(request.data)
+        try:
+            mutated_data = operator_func(request.data)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Operator '{selected_name}' execution failed: {type(e).__name__}: {e}"
+            )
         mutations.append((mutated_data, selected_name))
     
     return {"mutations": mutations}
@@ -97,7 +103,13 @@ def mutate(op_name: str, request: MutateWithOperatorRequest):
     if op_name not in mutation_operators:
         raise HTTPException(status_code=404, detail=f"Operator '{op_name}' not found in mutation_operators")
     operator_func = mutation_operators[op_name][1]
-    out = operator_func(request.data)
+    try:
+        out = operator_func(request.data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Operator '{op_name}' execution failed: {type(e).__name__}: {e}"
+        )
     return {"mutated": out}
 
 @app.post("/add_operator")

@@ -19,6 +19,10 @@ response.raise_for_status()
 
 operators = response.json()['operators']
 
+if not operators:
+    print("No operators found")
+    exit(1)
+
 mutations = []
 for operator in operators:
     response = requests.post(
@@ -28,7 +32,7 @@ for operator in operators:
     )
     response.raise_for_status()
     mutated_data = response.json()['mutated']
-    mutations.append(f"Operator: {operator['name']}, Weight: {operator['weight']}, Mutation: {mutated_data}")
+    mutations.append(f"Operator: {operator['name']}, Weight: {operator['weight']}, Mutation Generated: {mutated_data}")
 
 for mutation in mutations:
     print(mutation)

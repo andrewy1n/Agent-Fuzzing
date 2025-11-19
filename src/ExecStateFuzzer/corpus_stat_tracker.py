@@ -52,7 +52,7 @@ class CorpusStatTracker:
                 self.instruction_addresses.update(sample.instr_address_set)
             
             if new_edge_coverage:
-                self.last_coverage_time = time.time()
+                self.reset_time_since_last_coverage()
             
             self.total_instructions += sample.total_instructions
             self.pathlen_blocks_sum += sample.pathlen_blocks

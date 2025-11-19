@@ -120,7 +120,8 @@ class Fuzzer:
                         crash_info=result.crash_info,
                         execution_time=result.execution_time
                     ))
-
+                
+                # if the execution state is new, add it to the state set and the corpus results
                 if result.execution_state not in state_set:
                     new_execution_state = True
                     
@@ -129,9 +130,9 @@ class Fuzzer:
         
                     corpus_results.append(result)
                     self.corpus_stat_tracker.add_sample(result)
-                    
+
                     accepted_results.append(result)
-                
+     
                 op_effectiveness = OperatorEffectivenessData(
                     operator_name=op_name,
                     mutation=mutation,
@@ -161,7 +162,7 @@ class Fuzzer:
                         unique_mutations=len(set(session_mutations)),
                         total_mutations=len(session_mutations),
                         num_corpus_execution_states=len(state_set),
-                        execution_states_summary=execution_state_summary[:100]
+                        execution_states_summary=f"{execution_state_summary[:200]}..."
                     )
 
                     self.coverage_plateau_flow.run(session_data)
@@ -171,6 +172,9 @@ class Fuzzer:
                     state_set = set()   # reset state
 
                     self.corpus_stat_tracker.reset_time_since_last_coverage()
+
+                    session_mutations = []
+                    operator_effectiveness_data = []
                 
                 if not _under_time_limit():
                     stop_due_to_time = True

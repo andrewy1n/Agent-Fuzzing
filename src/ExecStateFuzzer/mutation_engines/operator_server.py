@@ -5,6 +5,7 @@ import random
 import os
 import json
 import yaml
+import tempfile
 
 app = FastAPI()
 mutation_operators = {}
@@ -16,13 +17,38 @@ def persist_operators():
     for name, (weight, func, code) in mutation_operators.items():
         data[name] = {"weight": weight, "code": code}
     os.makedirs(os.path.dirname(OPERATORS_FILE), exist_ok=True)
-    with open(OPERATORS_FILE, "w") as f:
-        json.dump(data, f)
+    # Atomic write: write to a temp file and replace
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(OPERATORS_FILE),
+        prefix=".operators.",
+        suffix=".json"
+    )
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            json.dump(data, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, OPERATORS_FILE)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
 
 def load_operators():
     if os.path.exists(OPERATORS_FILE):
         with open(OPERATORS_FILE, "r") as f:
-            data = json.load(f)
+            content = f.read()
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            try:
+                # Try to parse the first valid JSON value and ignore trailing bytes
+                data, _ = json.JSONDecoder().raw_decode(content)
+                print("Warning: operators file contained trailing data; loaded first JSON object.")
+            except Exception:
+                print("Warning: failed to parse operators file; starting with empty operator set.")
+                return
         for name, meta in data.items():
             local_env = {}
             exec(meta["code"], {}, local_env)

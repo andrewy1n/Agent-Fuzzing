@@ -1,6 +1,5 @@
 import requests
 from pathlib import Path
-from ExecStateFuzzer.models import SessionData
 
 
 class CoveragePlateauFlow:
@@ -10,14 +9,14 @@ class CoveragePlateauFlow:
         self.challenge_name = challenge_name
         self.num_calls = 0
 
-    def run(self, session_data: SessionData):
+    def run(self, session_data_dir: Path):
         payload = {
-            "session_data": str(session_data.model_dump()),
             "thread_id": self.config['thread_id'],
             "source_docker_id": self.config['source_docker_id'],
             "fuzzer_docker_id": self.config['fuzzer_docker_id'],
             "results_dir": str(Path(self.config['results_dir']) / f"cov_flow_{self.num_calls}"),
             "challenge_name": self.challenge_name,
+            "session_data_dir": str(session_data_dir),
         }
 
         try:

@@ -47,7 +47,11 @@ fuzzer:
     - 1,1 1,8
     - 1,1 1,9
     - 1,1 1,10
-  stdout: true
+  stdout: false
+  function_profile:
+    sample_every: 100
+    top_n: 10
+    target_only: true
   execution_values:
     - name: knight_move_success
       type: bool
@@ -81,7 +85,7 @@ corpus_stat_tracker:
   coverage_plateau_timeout_seconds: 10
 
 target:
-  binary_path: 'samples/CROMU_00005'
+  binary_path: 'cgc-cbs/cqe-challenges/CROMU_00005/CROMU_00005'
   cgc_binary: 'CROMU_00005'
   rootfs: 'rootfs/x8664_linux_glibc2.39'
 
@@ -97,3 +101,4 @@ coverage_plateau_flow:
   source_docker_id: 618a48a28216862b93e6780e59a29dda77ab04d3be9d104cb75e75d8322e39d5
   fuzzer_docker_id: e2aa20b9451433bcd25868f7d0bf9b11072c665a22e8aef3fbc3e1bff23aa4c1
   results_dir: results/CROMU_00005_20251111_182915/cov_plat_0
+  base_dir: cov_plat_data 

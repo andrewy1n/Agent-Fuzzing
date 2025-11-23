@@ -152,20 +152,21 @@ class Fuzzer:
                     print(f"\nCoverage plateau detected after {self.run_config['corpus_stat_tracker']['coverage_plateau_timeout_seconds']} seconds without new coverage.")
                     operator_effectiveness = self.create_operator_effectiveness_summary(operator_effectiveness_data)
 
-                    execution_state_summary = ""
-
-                    for execution_state in state_set:
-                        execution_state_summary += str(self._serialize_execution_state(execution_state)) + "\n"
-
                     session_data = SessionData(
                         operator_effectiveness=operator_effectiveness,
-                        unique_mutations=len(set(session_mutations)),
-                        total_mutations=len(session_mutations),
-                        num_corpus_execution_states=len(state_set),
-                        execution_states_summary=f"{execution_state_summary[:200]}..."
+                        mutations=session_mutations,
+                        execution_state_set=state_set
                     )
 
-                    self.coverage_plateau_flow.run(session_data)
+                    session_data_dir = Path(self.run_config['coverage_plateau_flow']['base_dir']) / datetime.now().strftime('%Y%m%d_%H%M%S')
+                    
+                    print(f"Saving session data to {session_data_dir}")
+                    session_data_dir.mkdir(parents=True, exist_ok=True)
+
+                    self.save_session_data(session_data, session_data_dir)
+                    self.save_results(corpus_results, session_data_dir / 'corpus_results.json')
+                    
+                    self.coverage_plateau_flow.run(session_data_dir)
 
                     # reload config for any new definitions of state
                     self.run_config = yaml.safe_load(open('config.yaml'))
@@ -203,7 +204,7 @@ class Fuzzer:
 
         self.print_summary(fuzzer_result, crashes)
         self.save_summary(fuzzer_result)
-        self.save_results(corpus_results)
+        self.save_results(corpus_results, self.output_dir / 'corpus_results.json')
         self.save_crashes(crashes)
         self.save_mutations()
         self.save_coverage_over_time(fuzzer_result.coverage_over_time)
@@ -282,9 +283,7 @@ class Fuzzer:
                 result.append(item)
         return result
 
-    def save_results(self, results: List[ExecutionResult]):
-        path = self.output_dir / 'corpus_results.json'
-
+    def save_results(self, results: List[ExecutionResult], path: Path):
         def serialize_result(r: ExecutionResult) -> dict:
             return {
                 'input_data': r.input_data.decode('utf-8', errors='replace'),
@@ -299,6 +298,7 @@ class Fuzzer:
                 'total_instructions': r.total_instructions,
                 'pathlen_blocks': r.pathlen_blocks,
                 'call_depth': r.call_depth,
+                'function_hotspots': [f.model_dump() for f in r.function_hotspots],
             }
         serializable = [serialize_result(r) for r in results]
         with open(path, 'w') as f:
@@ -366,3 +366,21 @@ class Fuzzer:
             ))
         
         return operator_effectiveness_summaries
+    
+    def save_session_data(self, session_data: SessionData, session_data_dir: Path):
+        path = session_data_dir / 'session_data_summary.json'
+
+        def serialize_session_data(session_data: SessionData) -> dict:
+            return {
+                'operator_effectiveness': [o.model_dump() for o in session_data.operator_effectiveness],
+                'num_mutations': len(session_data.mutations),
+                'unique_mutations': len(set(session_data.mutations)),
+                'num_execution_states': len(session_data.execution_state_set),
+                'mutations': session_data.mutations,
+                'execution_state_set': [self._serialize_execution_state(es) for es in session_data.execution_state_set],
+            }
+        
+        serializable = serialize_session_data(session_data)
+        with open(path, 'w') as f:
+            json.dump(serializable, f, indent=2)
+        print(f"Saved session data to {path}")

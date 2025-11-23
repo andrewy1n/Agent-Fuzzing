@@ -1,5 +1,5 @@
 import time
-from .models import ExecutionResult, ExecutionOutcome
+from .models import ExecutionResult, ExecutionOutcome, FunctionHotspot
 from qiling import Qiling
 from qiling.const import QL_INTERCEPT
 from qiling.extensions import pipe
@@ -87,6 +87,52 @@ def _compute_image_range(image) -> tuple[int, int]:
         sys.stderr.write("[error] unsupported ELF class for range computation\n")
         sys.stderr.flush()
 
+def _load_func_symbols_safe(elf_path: str):
+    try:
+        from elftools.elf.elffile import ELFFile
+        out = []
+        with open(elf_path, "rb") as f:
+            ef = ELFFile(f)
+            for secname in (".symtab", ".dynsym"):
+                sec = ef.get_section_by_name(secname)
+                if not sec:
+                    continue
+                for sym in sec.iter_symbols():
+                    try:
+                        st = sym.entry
+                        if sym['st_info']['type'] == 'STT_FUNC' and st.st_size and sym.name:
+                            start = st.st_value
+                            out.append((start, start + st.st_size, sym.name))
+                    except Exception:
+                        pass
+        out.sort(key=lambda x: x[0])
+        starts = [s for s, _, _ in out]
+        return out, starts
+    except Exception:
+        return [], []
+
+def _resolve_symbol_name(symtab, starts, addr: int, img_base: int | None = None) -> str:
+    if not symtab:
+        return f"0x{addr:x}"
+    from bisect import bisect_right
+    # Try absolute address first
+    i = bisect_right(starts, addr) - 1
+    if i >= 0:
+        s, e, n = symtab[i]
+        if s <= addr < e:
+            return n
+    # Then try module-relative (e.g., PIE mapped at img_base)
+    if img_base is not None:
+        rel = addr - img_base
+        i = bisect_right(starts, rel) - 1
+        if i >= 0:
+            s, e, n = symtab[i]
+            if s <= rel < e:
+                return n
+        # Fallback to a readable module-relative offset
+        return f"+0x{rel:x}"
+    return f"0x{addr:x}"
+
 def _coerce_value_to_int(value: Union[bytes, bytearray, int]) -> int:
     if isinstance(value, int):
         return value
@@ -123,6 +169,20 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
     PER_RUN_TIMEOUT = run_config['fuzzer'].get('per_run_timeout', 0)
     STDOUT = run_config['fuzzer'].get('stdout', False) or force_stdout
     MAP_SIZE = 1 << 16
+
+    fp_cfg = run_config['fuzzer'].get('function_profile', {})
+   
+    PROFILE_ENABLED = True
+    SAMPLE_EVERY = int(fp_cfg.get('sample_every', 100))
+    TOP_N = int(fp_cfg.get('top_n', 10))
+    TARGET_ONLY = bool(fp_cfg.get('target_only', True))
+
+    if PROFILE_ENABLED:
+        symtab, starts = _load_func_symbols_safe(BINARY_PATH)
+        samples = {}
+        sample_i = [0]
+    else:
+        symtab, starts, samples, sample_i = [], [], {}, [0]
 
     # Convert execution_values list to dict for efficient lookup
     execution_values_list = run_config['fuzzer'].get('execution_values') or []
@@ -195,6 +255,12 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
             instr_addresses.add(address)
             total_instructions[0] += 1
             inside_module = (img_end > img_base) and (img_base <= address < img_end)
+
+            if PROFILE_ENABLED:
+                sample_i[0] += 1
+                if sample_i[0] % SAMPLE_EVERY == 0 and ((not TARGET_ONLY) or inside_module):
+                    name = _resolve_symbol_name(symtab, starts, address, img_base if inside_module else None)
+                    samples[name] = samples.get(name, 0) + 1
 
             if cs is None:
                 return
@@ -322,11 +388,19 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         if 'instr_addresses' not in locals():
             instr_addresses = None
         if 'total_instructions' not in locals():
-            total_instructions = 0
+            total_instructions = [0]
         if 'pathlen_blocks' not in locals():
-            pathlen_blocks = 0
+            pathlen_blocks = [0]
         if 'call_depth' not in locals():
-            call_depth = 0
+            call_depth = [0]
+    
+    function_hotspots = []
+    if PROFILE_ENABLED and samples:
+        total = sum(samples.values()) or 1
+        top = sorted(samples.items(), key=lambda kv: kv[1], reverse=True)[:TOP_N]
+        for name, cnt in top:
+            pct = 100.0 * cnt / total
+            function_hotspots.append(FunctionHotspot(symbol=name, count=cnt, percentage=pct))
     
     # Parse execution values from stdout
     if 'stdout_buffer' in locals() and stdout_buffer:
@@ -459,4 +533,5 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         total_instructions=total_instructions[0],
         pathlen_blocks=pathlen_blocks[0],
         call_depth=call_depth[0],
+        function_hotspots=function_hotspots,
     )

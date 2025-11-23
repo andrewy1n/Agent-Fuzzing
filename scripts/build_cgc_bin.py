@@ -11,7 +11,6 @@ def load_config(config_path: str) -> dict:
 
 
 def save_config(config_path: str, config: dict):
-    """Save the configuration back to the YAML file."""
     with open(config_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
@@ -35,7 +34,7 @@ def find_cgc_binary_dir(cgc_cbs_root: Path, binary_name: str) -> Path:
 
 
 def build_cgc_binary(cgc_cbs_root: Path, binary_dir: Path, binary_name: str,
-                     compiler: str = "gcc", compiler_flags: str = "-O0 -g") -> Path:
+                     compiler: str = "gcc", compiler_flags: str = "-O2 -g -fno-omit-frame-pointer -fno-pie -no-pie -fno-optimize-sibling-calls -fno-inline -fno-inline-functions-called-once") -> Path:
     build_script = cgc_cbs_root / "bin" / "build.sh"
 
     if not build_script.exists():
@@ -47,7 +46,7 @@ def build_cgc_binary(cgc_cbs_root: Path, binary_dir: Path, binary_name: str,
     try:
         os.chdir(binary_dir)
 
-        cmd = [str(build_script), binary_name, "gcc", "-O3"] 
+        cmd = [str(build_script), binary_name, compiler, compiler_flags] 
 
         print(f"Building {binary_name} in {binary_dir}")
         print(f"Command: {' '.join(cmd)}")

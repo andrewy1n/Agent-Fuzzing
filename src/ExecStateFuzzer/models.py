@@ -8,6 +8,11 @@ class ExecutionOutcome(Enum):
     HANG = "hang"
     TIMEOUT = "timeout"
 
+class FunctionHotspot(BaseModel):
+    symbol: str
+    count: int
+    percentage: float
+
 class ExecutionResult(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     input_data: bytes
@@ -23,6 +28,7 @@ class ExecutionResult(BaseModel):
     total_instructions: int
     pathlen_blocks: int
     call_depth: int
+    function_hotspots: List[FunctionHotspot]
 
 class CrashResult(BaseModel):
     iteration: int
@@ -81,11 +87,9 @@ class OperatorEffectivenessSummary(BaseModel):
     unique_mutation_percentage: float
     total_mutations: int
 
+ExecutionStateSet = set[tuple]
+
 class SessionData(BaseModel):
     operator_effectiveness: List[OperatorEffectivenessSummary]
-    unique_mutations: int
-    total_mutations: int
-    num_corpus_execution_states: int
-    execution_states_summary: str
-
-ExecutionStateSet = set[tuple]
+    mutations: List[str]
+    execution_state_set: ExecutionStateSet

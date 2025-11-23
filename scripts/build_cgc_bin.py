@@ -34,7 +34,7 @@ def find_cgc_binary_dir(cgc_cbs_root: Path, binary_name: str) -> Path:
 
 
 def build_cgc_binary(cgc_cbs_root: Path, binary_dir: Path, binary_name: str,
-                     compiler: str = "gcc", compiler_flags: str = "-O2 -g -fno-omit-frame-pointer -fno-pie -no-pie -fno-optimize-sibling-calls -fno-inline -fno-inline-functions-called-once") -> Path:
+                     compiler: str = "gcc", compiler_flags: str = "-O2 -g -fno-omit-frame-pointer") -> Path:
     build_script = cgc_cbs_root / "bin" / "build.sh"
 
     if not build_script.exists():

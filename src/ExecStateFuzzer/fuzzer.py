@@ -47,7 +47,9 @@ class Fuzzer:
 
     def run(self):
         corpus_results: List[ExecutionResult] = []
+        corpus_strings: set[str] = set[str]()
         session_mutations: List[str] = []
+        session_results: List[ExecutionResult] = []
         crashes = []
         start_time = time.time()
         execution_count = 0
@@ -62,6 +64,7 @@ class Fuzzer:
         for initial_seed in self.seed_queue.queue:
             result = execute_with_qiling(initial_seed.encode('utf-8'), self.run_config)
             corpus_results.append(result)
+            corpus_strings.add(initial_seed)
             if result.execution_outcome == ExecutionOutcome.CRASH:
                 crashes.append(CrashResult(
                     iteration=execution_count,
@@ -107,6 +110,10 @@ class Fuzzer:
 
             for i, mutation in enumerate(mutations):
                 self.all_mutations.append(mutation)
+
+                if mutation in corpus_strings:
+                    continue
+                
                 result = execute_with_qiling(mutation.encode('utf-8'), self.run_config)
                 
                 op_name = operator_data[i] if i < len(operator_data) else 'unknown'
@@ -129,6 +136,7 @@ class Fuzzer:
                     state_set.add(result.execution_state)
         
                     corpus_results.append(result)
+                    corpus_strings.add(mutation)
                     self.corpus_stat_tracker.add_sample(result)
 
                     accepted_results.append(result)
@@ -143,6 +151,7 @@ class Fuzzer:
                 )
 
                 session_mutations.append(mutation)
+                session_results.append(result)
                 operator_effectiveness_data.append(op_effectiveness)
 
                 execution_count += 1
@@ -164,7 +173,7 @@ class Fuzzer:
                     session_data_dir.mkdir(parents=True, exist_ok=True)
 
                     self.save_session_data(session_data, session_data_dir)
-                    self.save_results(corpus_results, session_data_dir / 'corpus_results.json')
+                    self.save_results(session_results, session_data_dir / 'corpus_results.json')
                     
                     self.coverage_plateau_flow.run(session_data_dir)
 
@@ -175,6 +184,7 @@ class Fuzzer:
                     self.corpus_stat_tracker.reset_time_since_last_coverage()
 
                     session_mutations = []
+                    session_results = []
                     operator_effectiveness_data = []
                 
                 if not _under_time_limit():
@@ -190,7 +200,7 @@ class Fuzzer:
         fuzzer_result = FuzzerResult(
             total_executions=execution_count,
             inital_seed_count=initial_seed_count,
-            generated_corpus_count=len(corpus_results) - initial_seed_count,
+            generated_corpus_count=len(corpus_strings) - initial_seed_count,
             total_mutations=len(self.all_mutations),
             unique_mutations=len(set(self.all_mutations)),
             crashes_found=len(crashes),

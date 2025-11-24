@@ -92,4 +92,5 @@ ExecutionStateSet = set[tuple]
 class SessionData(BaseModel):
     operator_effectiveness: List[OperatorEffectivenessSummary]
     mutations: List[str]
+    mutation_results: List[ExecutionResult]
     execution_state_set: ExecutionStateSet

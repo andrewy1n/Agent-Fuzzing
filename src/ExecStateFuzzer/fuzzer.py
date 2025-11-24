@@ -164,6 +164,7 @@ class Fuzzer:
                     session_data = SessionData(
                         operator_effectiveness=operator_effectiveness,
                         mutations=session_mutations,
+                        mutation_results=session_results,
                         execution_state_set=state_set
                     )
 
@@ -181,7 +182,34 @@ class Fuzzer:
                     self.run_config = yaml.safe_load(open('config.yaml'))
                     state_set = set()   # reset state
 
+                    for seed_inject in self.run_config['fuzzer'].get('seed_injects', []):
+                        if seed_inject in corpus_strings:
+                            continue
+                        
+                        result = execute_with_qiling(seed_inject.encode('utf-8'), self.run_config)
+                        corpus_results.append(result)
+                        corpus_strings.add(seed_inject)
+                        
+                        if result.execution_outcome == ExecutionOutcome.CRASH:
+                            crashes.append(CrashResult(
+                                iteration=execution_count,
+                                input_data=seed_inject,
+                                crash_info=result.crash_info,
+                                execution_time=result.execution_time
+                            ))
+                        
+                        self.seed_queue.add_seed(seed_inject)
+                        state_set.add(result.execution_state)
+                        execution_count += 1
+                        execution_time += result.execution_time
+                        
+                        self.corpus_stat_tracker.add_sample(result)
+
                     self.corpus_stat_tracker.reset_time_since_last_coverage()
+
+                    # reset seed injects for next session
+                    self.run_config['fuzzer']['seed_injects'] = []
+                    yaml.dump(self.run_config, open('config.yaml', 'w'))
 
                     session_mutations = []
                     session_results = []
@@ -380,6 +408,33 @@ class Fuzzer:
     def save_session_data(self, session_data: SessionData, session_data_dir: Path):
         path = session_data_dir / 'session_data_summary.json'
 
+        def aggregate_function_hotspots(mutation_results: List[ExecutionResult]) -> List[dict]:
+            symbol_counts = {}
+            
+            for result in mutation_results:
+                if not result.function_hotspots:
+                    continue
+                for hotspot in result.function_hotspots:
+                    symbol = hotspot.symbol
+                    if symbol not in symbol_counts:
+                        symbol_counts[symbol] = 0
+                    symbol_counts[symbol] += hotspot.count
+            
+            if not symbol_counts:
+                return []
+            
+            total_samples = sum(symbol_counts.values())
+            aggregated = [
+                {
+                    'symbol': symbol,
+                    'count': count,
+                    'percentage': (count / total_samples * 100.0) if total_samples > 0 else 0.0
+                }
+                for symbol, count in sorted(symbol_counts.items(), key=lambda x: x[1], reverse=True)
+            ]
+            
+            return aggregated
+
         def serialize_session_data(session_data: SessionData) -> dict:
             return {
                 'operator_effectiveness': [o.model_dump() for o in session_data.operator_effectiveness],
@@ -388,6 +443,7 @@ class Fuzzer:
                 'num_execution_states': len(session_data.execution_state_set),
                 'mutations': session_data.mutations,
                 'execution_state_set': [self._serialize_execution_state(es) for es in session_data.execution_state_set],
+                'overall_function_hotspots': aggregate_function_hotspots(session_data.mutation_results),
             }
         
         serializable = serialize_session_data(session_data)

@@ -2,6 +2,12 @@ _meta:
   editable_keys:
     - path: fuzzer.seed_inputs
       type: list
+      description: |
+        List of seed inputs (meant to be used for initial seeding only).
+    - path: fuzzer.seed_injects
+      type: list
+      description: |
+        List of seed injects (meant to be used for coverage plateau flow only).
     - path: fuzzer.execution_values
       type: list
       description: |
@@ -47,6 +53,7 @@ fuzzer:
     - 1,1 1,8
     - 1,1 1,9
     - 1,1 1,10
+  seed_injects:
   stdout: false
   function_profile:
     sample_every: 100

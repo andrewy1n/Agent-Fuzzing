@@ -1,111 +1,128 @@
 _meta:
   editable_keys:
-    - path: fuzzer.seed_inputs
-      type: list
-      description: |
-        List of seed inputs (meant to be used for initial seeding only).
-    - path: fuzzer.seed_injects
-      type: list
-      description: |
-        List of seed injects (meant to be used for coverage plateau flow only).
-    - path: fuzzer.execution_values
-      type: list
-      description: |
-        List of execution state definitions. Each state can include:
-        - name: semantic name of the state
-        - type: type of the state, one of: int, float, bool, string
-        - notes: human-readable explanation
-    - path: fuzzer.execution_state
-      type: list
-      description: |
-        List of execution state definitions, they are either values, predicates, or sum.
-        Each definition takes up a value in the execution state tuple.
-        - type: predicate # boolean expression using <execution_value_name> and real values, operators: ==, !=, <, >, <=, >=, &&, ||
-        - expr: # boolean expression using <execution_value_name> and real values, operators: ==, !=, <, >, <=, >=, &&, ||
+  - description: 'List of seed inputs (meant to be used for initial seeding only).
 
-        - type: value # last value of the given execution value name
-        - name: <execution_value_name>
+      '
+    path: fuzzer.seed_inputs
+    type: list
+  - description: 'List of seed injects (meant to be used for coverage plateau flow
+      only).
 
-        - type: sum # sum of all values seen for the given execution value name
-        - name: <execution_value_name>
+      '
+    path: fuzzer.seed_injects
+    type: list
+  - description: 'List of execution state definitions. Each state can include:
 
-        - type: counter # count of how many times the boolean expression is true
-        - expr: # boolean expression using <execution_value_name> and real values, operators: ==, !=, <, >, <=, >=, &&, ||
+      - name: semantic name of the state
 
-        - type: set # set of all values seen for the given execution value name
-        - name: <execution_value_name>
+      - type: type of the state, one of: int, float, bool, string
 
-fuzzer:
-  time_limit: 600
-  execution_limit: 0
-  per_run_timeout: 5
-  mutations:
-    num_mutations: 10
-    server: http://localhost:8001
-    operators_file: /home/andrewyin/qiling_tests/ExecStateFuzzer/operators.json
-  seed_inputs:
-    - 1,1 1,2
-    - 1,1 1,3
-    - 1,1 1,4
-    - 1,1 1,5
-    - 1,1 1,6
-    - 1,1 1,7
-    - 1,1 1,8
-    - 1,1 1,9
-    - 1,1 1,10
-  seed_injects:
-  stdout: false
-  function_profile:
-    sample_every: 100
-    top_n: 10
-    target_only: true
-  execution_values:
-    - name: knight_move_success
-      type: bool
-      notes: "1 if WHITE knight move succeeded"
-    - name: knight_position_x
-      type: int
-      notes: "Destination x for WHITE knight"
-    - name: knight_position_y
-      type: int
-      notes: "Destination y for WHITE knight"
-    - name: pawn_white_move_success
-      type: bool
-      notes: "1 if WHITE pawn move succeeded"
-    - name: pawn_white_position_y
-      type: int
-      notes: "Destination y for WHITE pawn"
-  execution_state:
-    - type: value
-      name: knight_move_success
-    - type: value
-      name: knight_position_x
-    - type: value
-      name: knight_position_y
-    - type: value
-      name: pawn_white_move_success
-    - type: value
-      name: pawn_white_position_y
+      - notes: human-readable explanation
 
+      '
+    path: fuzzer.execution_values
+    type: list
+  - description: 'List of execution state definitions, they are either values, predicates,
+      or sum.
+
+      Each definition takes up a value in the execution state tuple.
+
+      - type: predicate # boolean expression using <execution_value_name> and real
+      values, operators: ==, !=, <, >, <=, >=, &&, ||
+
+      - expr: # boolean expression using <execution_value_name> and real values, operators:
+      ==, !=, <, >, <=, >=, &&, ||
+
+
+      - type: value # last value of the given execution value name
+
+      - name: <execution_value_name>
+
+
+      - type: sum # sum of all values seen for the given execution value name
+
+      - name: <execution_value_name>
+
+
+      - type: counter # count of how many times the boolean expression is true
+
+      - expr: # boolean expression using <execution_value_name> and real values, operators:
+      ==, !=, <, >, <=, >=, &&, ||
+
+
+      - type: set # set of all values seen for the given execution value name
+
+      - name: <execution_value_name>
+
+      '
+    path: fuzzer.execution_state
+    type: list
 corpus_stat_tracker:
-  snapshot_interval_seconds: 10
   coverage_plateau_timeout_seconds: 10
-
-target:
-  binary_path: 'cgc-cbs/cqe-challenges/CROMU_00005/CROMU_00005'
-  cgc_binary: 'CROMU_00005'
-  rootfs: 'rootfs/x8664_linux_glibc2.39'
-
-input:
-  method: 'stdin'
-
-output:
-  dir: 'out'
-
+  snapshot_interval_seconds: 10
 coverage_plateau_flow:
-  endpoint: 'http://localhost:8000/run_coverage_plateau_flow'
-  thread_id: CROMU_00005_20251111_182916::deep_agent
-  source_docker_id: 618a48a28216862b93e6780e59a29dda77ab04d3be9d104cb75e75d8322e39d5
+  base_dir: cov_plat_data
+  endpoint: http://localhost:8000/run_coverage_plateau_flow
   fuzzer_docker_id: e2aa20b9451433bcd25868f7d0bf9b11072c665a22e8aef3fbc3e1bff23aa4c1
   results_dir: results/CROMU_00005_20251111_182915/cov_plat_0
-  base_dir: cov_plat_data 
+  source_docker_id: 618a48a28216862b93e6780e59a29dda77ab04d3be9d104cb75e75d8322e39d5
+  thread_id: CROMU_00005_20251111_182916::deep_agent
+fuzzer:
+  execution_limit: 0
+  execution_state:
+  - name: knight_move_success
+    type: value
+  - name: knight_position_x
+    type: value
+  - name: knight_position_y
+    type: value
+  - name: pawn_white_move_success
+    type: value
+  - name: pawn_white_position_y
+    type: value
+  execution_values:
+  - name: knight_move_success
+    notes: 1 if WHITE knight move succeeded
+    type: bool
+  - name: knight_position_x
+    notes: Destination x for WHITE knight
+    type: int
+  - name: knight_position_y
+    notes: Destination y for WHITE knight
+    type: int
+  - name: pawn_white_move_success
+    notes: 1 if WHITE pawn move succeeded
+    type: bool
+  - name: pawn_white_position_y
+    notes: Destination y for WHITE pawn
+    type: int
+  function_profile:
+    sample_every: 100
+    target_only: true
+    top_n: 10
+  mutations:
+    num_mutations: 10
+    operators_file: /home/andrewyin/qiling_tests/ExecStateFuzzer/operators.json
+    server: http://localhost:8001
+  per_run_timeout: 5
+  seed_injects: []
+  seed_inputs:
+  - 1,1 1,2
+  - 1,1 1,3
+  - 1,1 1,4
+  - 1,1 1,5
+  - 1,1 1,6
+  - 1,1 1,7
+  - 1,1 1,8
+  - 1,1 1,9
+  - 1,1 1,10
+  stdout: false
+  time_limit: 600
+input:
+  method: stdin
+output:
+  dir: out
+target:
+  binary_path: cgc-cbs/cqe-challenges/CROMU_00005/CROMU_00005
+  cgc_binary: CROMU_00005
+  rootfs: rootfs/x8664_linux_glibc2.39

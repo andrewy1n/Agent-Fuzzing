@@ -182,7 +182,8 @@ class Fuzzer:
                     self.run_config = yaml.safe_load(open('config.yaml'))
                     state_set = set()   # reset state
 
-                    for seed_inject in self.run_config['fuzzer'].get('seed_injects', []):
+                    seed_injects = self.run_config['fuzzer'].get('seed_injects') or []
+                    for seed_inject in seed_injects:
                         if seed_inject in corpus_strings:
                             continue
                         

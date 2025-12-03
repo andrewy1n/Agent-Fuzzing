@@ -39,16 +39,16 @@ class Fuzzer:
         self.output_dir = Path(output_root) / timestamp
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._popped_seeds: List[bytes] = []
-        self.all_mutations: List[str] = []
+        self.all_mutations: List[bytes] = []
         fcfg = self.run_config['fuzzer'] 
-        self.seed_inputs = fcfg['seed_inputs']
+        self.seed_inputs: List[bytes] = [s.encode('latin-1') for s in fcfg['seed_inputs']]
         self.mutator = Mutator(config=fcfg['mutations'])
         self.coverage_plateau_flow = CoveragePlateauFlow(config=self.run_config['coverage_plateau_flow'], challenge_name=self.run_config['target']['cgc_binary'])
 
     def run(self):
         corpus_results: List[ExecutionResult] = []
-        corpus_strings: set[str] = set[str]()
-        session_mutations: List[str] = []
+        corpus_bytes: set[bytes] = set()
+        session_mutations: List[bytes] = []
         session_results: List[ExecutionResult] = []
         crashes = []
         start_time = time.time()
@@ -62,13 +62,13 @@ class Fuzzer:
             self.seed_queue.add_seed(seed_value)
         
         for initial_seed in self.seed_queue.queue:
-            result = execute_with_qiling(initial_seed.encode('utf-8'), self.run_config)
+            result = execute_with_qiling(initial_seed, self.run_config)
             corpus_results.append(result)
-            corpus_strings.add(initial_seed)
+            corpus_bytes.add(initial_seed)
             if result.execution_outcome == ExecutionOutcome.CRASH:
                 crashes.append(CrashResult(
                     iteration=execution_count,
-                    input_data=initial_seed,
+                    input_data=initial_seed.decode('latin-1'),
                     crash_info=result.crash_info,
                     execution_time=result.execution_time
                 ))
@@ -111,10 +111,10 @@ class Fuzzer:
             for i, mutation in enumerate(mutations):
                 self.all_mutations.append(mutation)
 
-                if mutation in corpus_strings:
+                if mutation in corpus_bytes:
                     continue
                 
-                result = execute_with_qiling(mutation.encode('utf-8'), self.run_config)
+                result = execute_with_qiling(mutation, self.run_config)
                 
                 op_name = operator_data[i] if i < len(operator_data) else 'unknown'
                 new_edge_coverage = False
@@ -123,7 +123,7 @@ class Fuzzer:
                 if result.execution_outcome == ExecutionOutcome.CRASH:
                     crashes.append(CrashResult(
                         iteration=execution_count,
-                        input_data=mutation,
+                        input_data=mutation.decode('latin-1'),
                         crash_info=result.crash_info,
                         execution_time=result.execution_time
                     ))
@@ -136,21 +136,21 @@ class Fuzzer:
                     state_set.add(result.execution_state)
         
                     corpus_results.append(result)
-                    corpus_strings.add(mutation)
+                    corpus_bytes.add(mutation)
                     self.corpus_stat_tracker.add_sample(result)
 
                     accepted_results.append(result)
      
                 op_effectiveness = OperatorEffectivenessData(
                     operator_name=op_name,
-                    mutation=mutation,
+                    mutation=mutation.decode('latin-1'),
                     new_edge_coverage=new_edge_coverage,
                     new_execution_state=new_execution_state,
                     execution_time=result.execution_time,
                     iteration=execution_count
                 )
 
-                session_mutations.append(mutation)
+                session_mutations.append(mutation.decode('latin-1'))
                 session_results.append(result)
                 operator_effectiveness_data.append(op_effectiveness)
 
@@ -158,6 +158,14 @@ class Fuzzer:
                 execution_time += result.execution_time
        
                 if self.corpus_stat_tracker.is_coverage_plateau():
+                    time_limit = self.run_config['fuzzer']['time_limit']
+                    time_remaining = time_limit - (time.time() - start_time) if time_limit else float('inf')
+                    
+                    if time_remaining < 600:  # Skip if less than 10 minutes remaining
+                        print(f"\nCoverage plateau detected but only {time_remaining:.0f}s remaining - skipping plateau flow")
+                        self.corpus_stat_tracker.reset_time_since_last_coverage()
+                        continue
+                    
                     print(f"\nCoverage plateau detected after {self.run_config['corpus_stat_tracker']['coverage_plateau_timeout_seconds']} seconds without new coverage.")
                     operator_effectiveness = self.create_operator_effectiveness_summary(operator_effectiveness_data)
 
@@ -182,19 +190,20 @@ class Fuzzer:
                     self.run_config = yaml.safe_load(open('config.yaml'))
                     state_set = set()   # reset state
 
-                    seed_injects = self.run_config['fuzzer'].get('seed_injects') or []
+                    seed_injects_raw = self.run_config['fuzzer'].get('seed_injects') or []
+                    seed_injects = [s.encode('latin-1') for s in seed_injects_raw]
                     for seed_inject in seed_injects:
-                        if seed_inject in corpus_strings:
+                        if seed_inject in corpus_bytes:
                             continue
                         
-                        result = execute_with_qiling(seed_inject.encode('utf-8'), self.run_config)
+                        result = execute_with_qiling(seed_inject, self.run_config)
                         corpus_results.append(result)
-                        corpus_strings.add(seed_inject)
+                        corpus_bytes.add(seed_inject)
                         
                         if result.execution_outcome == ExecutionOutcome.CRASH:
                             crashes.append(CrashResult(
                                 iteration=execution_count,
-                                input_data=seed_inject,
+                                input_data=seed_inject.decode('latin-1'),
                                 crash_info=result.crash_info,
                                 execution_time=result.execution_time
                             ))
@@ -229,7 +238,7 @@ class Fuzzer:
         fuzzer_result = FuzzerResult(
             total_executions=execution_count,
             inital_seed_count=initial_seed_count,
-            generated_corpus_count=len(corpus_strings) - initial_seed_count,
+            generated_corpus_count=len(corpus_bytes) - initial_seed_count,
             total_mutations=len(self.all_mutations),
             unique_mutations=len(set(self.all_mutations)),
             crashes_found=len(crashes),
@@ -325,7 +334,7 @@ class Fuzzer:
     def save_results(self, results: List[ExecutionResult], path: Path):
         def serialize_result(r: ExecutionResult) -> dict:
             return {
-                'input_data': r.input_data.decode('utf-8', errors='replace'),
+                'input_data': r.input_data.decode('latin-1'),
                 'execution_outcome': r.execution_outcome.value,
                 'execution_time': r.execution_time,
                 'crash_info': r.crash_info,
@@ -353,7 +362,7 @@ class Fuzzer:
     def save_mutations(self):
         path = self.output_dir / 'mutations.json'
         mutations_data = {
-            'mutations': self.all_mutations
+            'mutations': [m.decode('latin-1') for m in self.all_mutations]
         }
         with open(path, 'w') as f:
             json.dump(mutations_data, f, indent=2)

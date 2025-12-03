@@ -9,7 +9,7 @@ parser.add_argument('--result_attr', type=str, required=False)
 args = parser.parse_args()
 
 
-input_data = codecs.decode(args.input, 'unicode_escape').encode('utf-8')
+input_data = codecs.decode(args.input, 'unicode_escape').encode('latin-1')
 
 run_config = yaml.safe_load(open("config.yaml"))
 

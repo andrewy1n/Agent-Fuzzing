@@ -107,22 +107,18 @@ fuzzer:
   per_run_timeout: 5
   seed_injects: []
   seed_inputs:
-  - 1,1 1,2
-  - 1,1 1,3
-  - 1,1 1,4
-  - 1,1 1,5
-  - 1,1 1,6
-  - 1,1 1,7
-  - 1,1 1,8
-  - 1,1 1,9
-  - 1,1 1,10
+  - PLAY\x07P\x071 0\x072 0\x070 0\x07START OVER\x07
+  - PLAY\x07P\x071 0\x072 0\x070 0\x07QUIT\x07
+  - PLAY\x07P\x071 0\x072 0\x070 0\x07START OVER\x07
+  - PLAY\x07P\x071 0\x072 0\x070 0\x07QUIT\x07
+  - PLAY\x07P\x071 0\x072 0\x070 0\x07START OVER\x07
   stdout: false
-  time_limit: 600
+  time_limit: 10
 input:
   method: stdin
 output:
   dir: out
 target:
-  binary_path: cgc-cbs/cqe-challenges/CROMU_00005/CROMU_00005
+  binary_path: cgc-cbs/cqe-challenges/NRFIN_00005/NRFIN_00005
   cgc_binary: CROMU_00005
   rootfs: rootfs/x8664_linux_glibc2.39

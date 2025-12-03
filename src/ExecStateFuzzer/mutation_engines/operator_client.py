@@ -5,10 +5,12 @@ class Mutator:
     def __init__(self, config: dict):
         self.server = config['server']      
 
-    def mutate(self, input: str, num_mutations: int) -> Tuple[List[str], List[dict]]:
+    def mutate(self, input: bytes, num_mutations: int) -> Tuple[List[bytes], List[str]]:
+        input_str = input.decode('latin-1')
+        
         response = requests.post(
             f"{self.server}/mutate_random",
-            json={"data": input, "num_mutations": num_mutations},
+            json={"data": input_str, "num_mutations": num_mutations},
             timeout=5
         )
         if not response.ok:
@@ -24,7 +26,7 @@ class Mutator:
             )
 
         mutation_list = response.json()['mutations']
-        mutations = [m[0] for m in mutation_list]
-        operator_data = [m[1] for m in mutation_list]  # Second item contains operator data
+        mutations = [m[0].encode('latin-1') for m in mutation_list]
+        operator_data = [m[1] for m in mutation_list]
         
         return mutations, operator_data

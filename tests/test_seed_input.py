@@ -6,7 +6,7 @@ run_config = yaml.safe_load(open("config.yaml"))
 
 results = []
 for seed_value in run_config['fuzzer']['seed_inputs']:
-    input_data = codecs.decode(seed_value, 'unicode_escape').encode('utf-8')
+    input_data = codecs.decode(seed_value, 'unicode_escape').encode('latin-1')
 
     result = execute_with_qiling(input_data, run_config)
 

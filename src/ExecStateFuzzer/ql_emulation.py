@@ -1,31 +1,12 @@
 import time
 from .models import ExecutionResult, ExecutionOutcome, FunctionHotspot
 from qiling import Qiling
-from qiling.const import QL_INTERCEPT
 from qiling.extensions import pipe
 from typing import List, Union
 import threading
 import sys
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_MODE_64
 import re
-
-class _InputFD:
-    def __init__(self, data: bytes):
-        self._data = data
-        self._pos = 0
-
-    def read(self, size: int) -> bytes:
-        if self._pos >= len(self._data) or size <= 0:
-            return b""
-        nl = self._data.find(b"\n", self._pos)
-        if nl != -1:
-            line_end = nl + 1
-            end = min(self._pos + size, line_end)
-        else:
-            end = min(len(self._data), self._pos + size)
-        chunk = self._data[self._pos:end]
-        self._pos = end
-        return chunk
 
 def _compute_image_range(image) -> tuple[int, int]:
     base = int(getattr(image, 'base', 0))
@@ -204,13 +185,8 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         sys.stderr.flush()
 
     try:
-        _ = input_data.decode('utf-8')
-    except UnicodeDecodeError:
-        input_data = input_data.decode('utf-8', errors='replace').encode('utf-8')
-
-    try:
         if STDOUT:
-            print(f"Executing with input: {input_data.decode(errors='replace')}")
+            print(f"Executing with input: {input_data.decode('latin-1')}")
         ql = Qiling([BINARY_PATH], ROOTFS_PATH, console=False)
 
         img = None
@@ -279,56 +255,6 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                         call_depth[0] -= 1
 
         ql.hook_code(instruction_cov_cb)
-
-        input_fd = 100
-        ql.os.fd[input_fd] = _InputFD(input_data)
-
-        def read_hook(ql, fd, buf, count):
-            if fd != 0:
-                return None
-
-            try:
-                prim = ql.os.fd[input_fd]
-            except Exception:
-                prim = None
-            if prim is not None and getattr(prim, '_pos', 0) < len(getattr(prim, '_data', b'')):
-                return (None, [input_fd, buf, count])
-
-            try:
-                ql.emu_stop()
-            except Exception:
-                pass
-            return (-1, [fd, buf, count])
-
-        ql.os.set_syscall('read', read_hook, intercept=QL_INTERCEPT.ENTER)
-
-        stdout_buffer = bytearray()
-
-        def write_call_hook(ql, fd, buf, count):
-            try:
-                data = ql.mem.read(buf, count)
-            except Exception:
-                return -1
-            if fd in (0, 1):
-                try:
-                    stdout_buffer.extend(data)
-                except Exception:
-                    pass
-                if STDOUT:
-                    try:
-                        sys.stdout.buffer.write(data)
-                    except Exception:
-                        sys.stdout.write(data.decode(errors='ignore'))
-                    sys.stdout.flush()
-            elif fd == 2:
-                try:
-                    sys.stderr.buffer.write(data)
-                except Exception:
-                    sys.stderr.write(data.decode(errors='ignore'))
-                sys.stderr.flush()
-            return count
-
-        ql.os.set_syscall('write', write_call_hook, intercept=QL_INTERCEPT.CALL)
                 
         ql.os.stdin = pipe.SimpleInStream(0)
         ql.os.stdin.write(input_data)
@@ -371,7 +297,11 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
             if run_exc:
                 raise run_exc[0]
             execution_time = time.time() - start_time
-            execution_outcome = ExecutionOutcome.NORMAL
+            if ql.internal_exception is not None:
+                execution_outcome = ExecutionOutcome.CRASH
+                crash_info = f"{ql.internal_exception}"
+            else:
+                execution_outcome = ExecutionOutcome.NORMAL
         
     except Exception as e:
         execution_time = time.time() - start_time
@@ -405,7 +335,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
     # Parse execution values from stdout
     if 'stdout_buffer' in locals() and stdout_buffer:
         try:
-            stdout_text = stdout_buffer.decode('utf-8', errors='ignore')
+            stdout_text = stdout_buffer.decode('latin-1')
             for line in stdout_text.splitlines():
                 line = line.strip()
                 # Look for "name: value" patterns anywhere in the line
@@ -525,7 +455,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         execution_time=execution_time,
         crash_info=crash_info,
         execution_state=tuple(computed_state),
-        stdout=(stdout_buffer.decode(errors='replace') if 'stdout_buffer' in locals() else None),
+        stdout=(stdout_buffer.decode('latin-1') if 'stdout_buffer' in locals() else None),
         cov_bitmap=cov_bitmap,
         branch_taken_bitmap=branch_taken,
         branch_fallthrough_bitmap=branch_fallthrough,

@@ -10,7 +10,7 @@ from .models import CrashResult, ExecutionResult, ExecutionStateSet, ExecutionOu
 from .models import OperatorEffectivenessSummary
 from .ql_emulation import execute_with_qiling
 from .corpus_stat_tracker import CorpusStatTracker
-from .mutation_engines.operator_client import Mutator
+from .mutation_engine import MutationEngine
 from .coverage_plateau_flow import CoveragePlateauFlow
 
 class SeedQueue:
@@ -42,7 +42,11 @@ class Fuzzer:
         self.all_mutations: List[bytes] = []
         fcfg = self.run_config['fuzzer'] 
         self.seed_inputs: List[bytes] = [s.encode('latin-1') for s in fcfg['seed_inputs']]
-        self.mutator = Mutator(config=fcfg['mutations'])
+        mutations_cfg = fcfg['mutations']
+        self.mutation_engine = MutationEngine(
+            operators_file=mutations_cfg['operators_file'],
+            strategy_file=mutations_cfg['strategy_file']
+        )
         self.coverage_plateau_flow = CoveragePlateauFlow(config=self.run_config['coverage_plateau_flow'], challenge_name=self.run_config['target']['cgc_binary'])
 
     def run(self):
@@ -101,10 +105,20 @@ class Fuzzer:
             seed = self.seed_queue.pop_seed()
             self._popped_seeds.append(seed)
             
-            mutations, operator_data = self.mutator.mutate(
-                input=seed,
+            # Get execution state from last corpus result (or empty if first run)
+            execution_state = tuple()
+            if corpus_results:
+                execution_state = corpus_results[-1].execution_state
+            
+            mutation_results = self.mutation_engine.mutate(
+                data=seed,
+                state_tuple=execution_state,
                 num_mutations=num_mutations
             )
+            
+            # Convert to separate lists for compatibility
+            mutations = [m[0] for m in mutation_results]
+            operator_data = [m[1] for m in mutation_results]
             
             accepted_results: list[ExecutionResult] = []
 

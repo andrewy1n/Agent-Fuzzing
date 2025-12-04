@@ -2,4 +2,5 @@
 __pycache__/
 out
 *.egg-info
-operators.json
+operators.py
+mutation_strategy.json

@@ -1,14 +1,9 @@
 _meta:
   editable_keys:
-  - description: 'List of seed inputs (meant to be used for initial seeding only).
-
-      '
+  - description: 'List of seed inputs (meant to be used for initial seeding only).'
     path: fuzzer.seed_inputs
     type: list
-  - description: 'List of seed injects (meant to be used for coverage plateau flow
-      only).
-
-      '
+  - description: 'List of seed injects (meant to be used for coverage plateau flow only).'
     path: fuzzer.seed_injects
     type: list
   - description: 'List of execution state definitions. Each state can include:
@@ -22,8 +17,8 @@ _meta:
       '
     path: fuzzer.execution_values
     type: list
-  - description: 'List of execution state definitions, they are either values, predicates,
-      or sum.
+  - description: |
+      List of execution state definitions, they are either values, predicates, or sum.
 
       Each definition takes up a value in the execution state tuple.
 
@@ -53,12 +48,10 @@ _meta:
       - type: set # set of all values seen for the given execution value name
 
       - name: <execution_value_name>
-
-      '
     path: fuzzer.execution_state
     type: list
 corpus_stat_tracker:
-  coverage_plateau_timeout_seconds: 10
+  coverage_plateau_timeout_seconds: 100
   snapshot_interval_seconds: 10
 coverage_plateau_flow:
   base_dir: cov_plat_data
@@ -70,55 +63,76 @@ coverage_plateau_flow:
 fuzzer:
   execution_limit: 0
   execution_state:
-  - name: knight_move_success
+  - name: command
     type: value
-  - name: knight_position_x
+  - name: player_char
     type: value
-  - name: knight_position_y
+  - name: move_success
     type: value
-  - name: pawn_white_move_success
+  - name: total_moves
     type: value
-  - name: pawn_white_position_y
+  - name: game_over
+    type: value
+  - name: player_won
+    type: value
+  - name: player_score
+    type: value
+  - name: start_over
     type: value
   execution_values:
-  - name: knight_move_success
-    notes: 1 if WHITE knight move succeeded
+  - name: command
+    notes: 1=PLAY, 2=PLAY AGAIN, 3=START OVER, 4=QUIT, 0=invalid
+    type: int
+  - name: player_char
+    notes: 1=P (goes first), 2=Q
+    type: int
+  - name: player_move_row
+    notes: Row coordinate of player move (0-2)
+    type: int
+  - name: player_move_col
+    notes: Column coordinate of player move (0-2)
+    type: int
+  - name: move_success
+    notes: 1 if move was valid, 0 if invalid
     type: bool
-  - name: knight_position_x
-    notes: Destination x for WHITE knight
+  - name: total_moves
+    notes: Total moves in current game
     type: int
-  - name: knight_position_y
-    notes: Destination y for WHITE knight
-    type: int
-  - name: pawn_white_move_success
-    notes: 1 if WHITE pawn move succeeded
+  - name: game_over
+    notes: 1 when game ends
     type: bool
-  - name: pawn_white_position_y
-    notes: Destination y for WHITE pawn
+  - name: player_won
+    notes: 1 if player won, 0 if computer won
+    type: bool
+  - name: player_score
+    notes: Player win count
     type: int
+  - name: computer_score
+    notes: Computer win count
+    type: int
+  - name: start_over
+    notes: 1 when START OVER command used (triggers vulnerability)
+    type: bool
   function_profile:
     sample_every: 100
     target_only: true
     top_n: 10
   mutations:
     num_mutations: 10
-    operators_file: /home/andrewyin/qiling_tests/ExecStateFuzzer/operators.json
-    server: http://localhost:8001
+    operators_file: operators.py
+    strategy_file: mutation_strategy.json
   per_run_timeout: 5
   seed_injects: []
   seed_inputs:
-  - PLAY\x07P\x071 0\x072 0\x070 0\x07START OVER\x07
-  - PLAY\x07P\x071 0\x072 0\x070 0\x07QUIT\x07
-  - PLAY\x07P\x071 0\x072 0\x070 0\x07START OVER\x07
-  - PLAY\x07P\x071 0\x072 0\x070 0\x07QUIT\x07
-  - PLAY\x07P\x071 0\x072 0\x070 0\x07START OVER\x07
-  stdout: false
-  time_limit: 10
+  - PLAY\x07P\x070 0\x071 1\x072 2\x07QUIT\x07
+  - PLAY\x07Q\x070 0\x071 1\x072 0\x07QUIT\x07
+  stdout: true
+  time_limit: 300
 input:
   method: stdin
 output:
   dir: out
 target:
-  binary_path: cgc-cbs/cqe-challenges/NRFIN_00005/NRFIN_00005
-  cgc_binary: CROMU_00005
+  binary_path: /home/andrewyin/qiling_tests/ExecStateFuzzer/cgc-cbs/cqe-challenges/NRFIN_00005/NRFIN_00005
+  cgc_binary: NRFIN_00005
   rootfs: rootfs/x8664_linux_glibc2.39

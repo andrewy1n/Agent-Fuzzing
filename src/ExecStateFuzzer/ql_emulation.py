@@ -1,12 +1,12 @@
 import time
 from .models import ExecutionResult, ExecutionOutcome, FunctionHotspot
+from .utils import coerce_value_to_int, eval_predicate_expression
 from qiling import Qiling
 from qiling.extensions import pipe
-from typing import List, Union
+from typing import List
 import threading
 import sys
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_MODE_64
-import re
 
 def _compute_image_range(image) -> tuple[int, int]:
     base = int(getattr(image, 'base', 0))
@@ -114,29 +114,6 @@ def _resolve_symbol_name(symtab, starts, addr: int, img_base: int | None = None)
         return f"+0x{rel:x}"
     return f"0x{addr:x}"
 
-def _coerce_value_to_int(value: Union[bytes, bytearray, int]) -> int:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, (bytes, bytearray)):
-        return int.from_bytes(value, byteorder='little', signed=False)
-
-def _eval_predicate_expression(expr: str, env: dict) -> bool:
-    expr = (expr or '').replace('&&', ' and ').replace('||', ' or ')
-    def _replace_name(match: re.Match) -> str:
-        name = match.group(0)
-        if name in ("and", "or", "not", "True", "False"):
-            return name
-        if name in env:
-            try:
-                return str(_coerce_value_to_int(env[name]))
-            except Exception:
-                return "0"
-        return "0"
-    substituted = re.sub(r"[A-Za-z_][A-Za-z0-9_]*", _replace_name, expr)
-    try:
-        return bool(eval(substituted, {"__builtins__": {}}, {}))
-    except Exception:
-        return False
 
 def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool = False, show_execution_values: bool = False) -> ExecutionResult:
     start_time = time.time()
@@ -259,6 +236,9 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         ql.os.stdin = pipe.SimpleInStream(0)
         ql.os.stdin.write(input_data)
         
+        stdout_buffer = bytearray()
+        ql.os.stdout = pipe.SimpleOutStream(1)
+        
         run_done = threading.Event()
         run_exc: List[BaseException] = []
 
@@ -302,6 +282,9 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                 crash_info = f"{ql.internal_exception}"
             else:
                 execution_outcome = ExecutionOutcome.NORMAL
+        
+        # Capture stdout output
+        stdout_buffer = bytearray(ql.os.stdout.getvalue())
         
     except Exception as e:
         execution_time = time.time() - start_time
@@ -393,12 +376,12 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
             values = execution_value_samples.get(name, [])
             total = 0
             for v in values:
-                total += _coerce_value_to_int(v)
+                total += coerce_value_to_int(v)
             computed_state.append(f"{name} (sum)")
             computed_state.append(total)
         elif item_type == 'predicate':
             expr = item['expr']
-            fired = _eval_predicate_expression(expr, latest_values)
+            fired = eval_predicate_expression(expr, latest_values)
             if show_execution_values:
                 try:
                     print(f"PRED env: {latest_values}")
@@ -418,7 +401,7 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
                     if i < len(values):
                         step_values[name] = values[i]
                 
-                if _eval_predicate_expression(expr, step_values):
+                if eval_predicate_expression(expr, step_values):
                     count += 1
             
             if show_execution_values:

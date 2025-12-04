@@ -3,10 +3,10 @@ import argparse
 import traceback
 
 from ExecStateFuzzer.mutation_engine import MutationEngine, execution_state_tuple_to_dict
+from ExecStateFuzzer.ql_emulation import execute_with_qiling
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input', type=str, required=True)
-parser.add_argument('--state', type=str, default=None, help='Execution state as comma-separated key=value pairs (e.g., "knight_move_success=0,pawn_white_position_y=5")')
 args = parser.parse_args()
 
 input_data = args.input
@@ -27,24 +27,10 @@ if not operators:
 
 print(f"Found {len(operators)} operators: {', '.join(operators)}\n")
 
-execution_state = tuple()
-if args.state:
-    state_dict = {}
-    for pair in args.state.split(','):
-        if '=' in pair:
-            key, value = pair.split('=', 1)
-            try:
-                state_dict[key.strip()] = int(value.strip())
-            except ValueError:
-                state_dict[key.strip()] = value.strip()
-    
-    state_list = []
-    for key, value in state_dict.items():
-        state_list.append(f"{key} (value)")
-        state_list.append(value)
-    execution_state = tuple(state_list)
-else:
-    execution_state = tuple()
+print("Running emulation to get execution state...")
+input_bytes = input_data.encode('latin-1')
+execution_result = execute_with_qiling(input_bytes, run_config)
+execution_state = execution_result.execution_state
 
 print(f"Execution state: {execution_state}\n")
 
@@ -58,8 +44,6 @@ else:
     print("No matching rule found!\n")
 
 print("Generating mutations:\n")
-
-input_bytes = input_data.encode('latin-1')
 
 num_mutations = 5
 try:

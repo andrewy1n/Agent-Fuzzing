@@ -286,6 +286,14 @@ def execute_with_qiling(input_data: bytes, run_config: dict, force_stdout: bool 
         # Capture stdout output
         stdout_buffer = bytearray(ql.os.stdout.getvalue())
         
+        # Print stdout if enabled
+        if STDOUT and stdout_buffer:
+            try:
+                sys.stdout.buffer.write(stdout_buffer)
+                sys.stdout.flush()
+            except Exception:
+                pass
+        
     except Exception as e:
         execution_time = time.time() - start_time
         execution_outcome = ExecutionOutcome.CRASH

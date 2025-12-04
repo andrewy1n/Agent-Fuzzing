@@ -1,6 +1,7 @@
 import yaml
 import time
 import json
+import codecs
 from pathlib import Path
 from typing import List
 import random
@@ -41,7 +42,7 @@ class Fuzzer:
         self._popped_seeds: List[bytes] = []
         self.all_mutations: List[bytes] = []
         fcfg = self.run_config['fuzzer'] 
-        self.seed_inputs: List[bytes] = [s.encode('latin-1') for s in fcfg['seed_inputs']]
+        self.seed_inputs: List[bytes] = [codecs.decode(s, 'unicode_escape').encode('latin-1') for s in fcfg['seed_inputs']]
         mutations_cfg = fcfg['mutations']
         self.mutation_engine = MutationEngine(
             operators_file=mutations_cfg['operators_file'],
@@ -205,7 +206,7 @@ class Fuzzer:
                     state_set = set()   # reset state
 
                     seed_injects_raw = self.run_config['fuzzer'].get('seed_injects') or []
-                    seed_injects = [s.encode('latin-1') for s in seed_injects_raw]
+                    seed_injects = [codecs.decode(s, 'unicode_escape').encode('latin-1') for s in seed_injects_raw]
                     for seed_inject in seed_injects:
                         if seed_inject in corpus_bytes:
                             continue

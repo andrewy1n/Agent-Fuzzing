@@ -25,7 +25,7 @@ class CoveragePlateauFlow:
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 stream=True,
-                timeout=600
+                timeout=900
             )
             response.raise_for_status()
             
